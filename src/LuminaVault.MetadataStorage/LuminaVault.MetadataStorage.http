@@ -1,0 +1,6 @@
+@LuminaVault.MetadataStorage_HostAddress = http://localhost:5062
+
+GET {{LuminaVault.MetadataStorage_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
