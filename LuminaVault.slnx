@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Projektmappenelemente/">
+    <File Path="README.md" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/LuminaVault.AiTagging/LuminaVault.AiTagging.csproj" />
     <Project Path="src/LuminaVault.ApiGateway/LuminaVault.ApiGateway.csproj" />

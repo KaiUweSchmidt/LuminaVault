@@ -3,41 +3,76 @@
 @inject MediaApiClient MediaApi
 @rendermode InteractiveServer
 
-<PageTitle>LuminaVault - Media Library</PageTitle>
+<PageTitle>LuminaVault - AI-Powered Media Management</PageTitle>
 
-<h1>LuminaVault</h1>
-<p>AI-powered media management &amp; search</p>
+<div class="landing">
+    <header class="landing-hero">
+        <h1>🌟 LuminaVault</h1>
+        <p class="landing-tagline">AI-powered photo &amp; video management</p>
+        <div class="landing-search">
+            <input @bind="searchQuery" @bind:event="oninput" placeholder="Search your media library..." />
+            <button @onclick="SearchMedia">🔍 Search</button>
+        </div>
+    </header>
 
-<div>
-    <input @bind="searchQuery" @bind:event="oninput" placeholder="Search media..." />
-    <button @onclick="SearchMedia">Search</button>
+    <section class="landing-features">
+        <div class="feature-card">
+            <span class="feature-icon">🔍</span>
+            <h3>Smart Search</h3>
+            <p>Full-text, tag, and similarity search using vector embeddings</p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">🤖</span>
+            <h3>AI Tagging</h3>
+            <p>Automatic classification and OCR via local or cloud models</p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">🗂️</span>
+            <h3>Categories</h3>
+            <p>Create, edit, and assign custom categories</p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">📍</span>
+            <h3>GPS Integration</h3>
+            <p>Extract and visualize location data on maps</p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">🖼️</span>
+            <h3>Media Processing</h3>
+            <p>Thumbnails, video previews, duplicate detection</p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">⚙️</span>
+            <h3>Scalable</h3>
+            <p>Handles 22,000+ photos and 100 GB of data</p>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <p class="error-message">@errorMessage</p>
+    }
+    else if (isLoading)
+    {
+        <p class="loading-message">Loading...</p>
+    }
+    else if (mediaItems.Count > 0)
+    {
+        <section class="landing-recent">
+            <h2>Recent Media</h2>
+            <ul class="media-list">
+                @foreach (var item in mediaItems)
+                {
+                    <li class="media-item">
+                        <strong>@item.Title</strong>
+                        <span class="media-tags">@string.Join(", ", item.Tags)</span>
+                        <small>@item.CreatedAt.ToString("yyyy-MM-dd")</small>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
 </div>
-
-@if (!string.IsNullOrEmpty(errorMessage))
-{
-    <p style="color:red">@errorMessage</p>
-}
-else if (isLoading)
-{
-    <p>Loading...</p>
-}
-else if (mediaItems.Count == 0)
-{
-    <p>No media found. Start by importing files.</p>
-}
-else
-{
-    <ul>
-        @foreach (var item in mediaItems)
-        {
-            <li>
-                <strong>@item.Title</strong>
-                <span>@string.Join(", ", item.Tags)</span>
-                <small>@item.CreatedAt.ToString("yyyy-MM-dd")</small>
-            </li>
-        }
-    </ul>
-}
 
 @code {
     private List<MediaItem> mediaItems = [];

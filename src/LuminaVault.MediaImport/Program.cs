@@ -1,6 +1,7 @@
 using LuminaVault.MediaImport;
 using Microsoft.EntityFrameworkCore;
 using Minio;
+using Minio.DataModel.Args;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +11,9 @@ builder.AddMinioClient("minio");
 
 builder.Services.AddHttpClient<ThumbnailServiceClient>(client =>
     client.BaseAddress = new Uri("http://thumbnail-generation"));
+
+builder.Services.AddHttpClient<MetadataStorageClient>(client =>
+    client.BaseAddress = new Uri("http://metadata-storage"));
 
 var app = builder.Build();
 
@@ -21,27 +25,76 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
-app.MapPost("/import", async (ImportMediaRequest request, IMinioClient minio,
-    MediaImportDbContext db, ThumbnailServiceClient thumbnails) =>
+app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
+    MediaImportDbContext db, ThumbnailServiceClient thumbnails,
+    MetadataStorageClient metadataClient, ILogger<Program> logger) =>
 {
+    if (!httpRequest.HasFormContentType)
+        return Results.BadRequest("Multipart form data expected.");
+
+    var form = await httpRequest.ReadFormAsync();
+    var file = form.Files.GetFile("file");
+    if (file is null || file.Length == 0)
+        return Results.BadRequest("No file provided.");
+
+    var title = form["title"].ToString();
+    if (string.IsNullOrWhiteSpace(title))
+        title = Path.GetFileNameWithoutExtension(file.FileName);
+
+    const string bucket = "media";
+    await EnsureBucketExistsAsync(minio, bucket);
+
+    var mediaId = Guid.NewGuid();
+    var storageKey = $"{mediaId}/{file.FileName}";
+
+    await using var stream = file.OpenReadStream();
+    await minio.PutObjectAsync(new PutObjectArgs()
+        .WithBucket(bucket)
+        .WithObject(storageKey)
+        .WithStreamData(stream)
+        .WithObjectSize(file.Length)
+        .WithContentType(file.ContentType));
+
     var mediaItem = new MediaItem
     {
-        Id = Guid.NewGuid(),
-        FileName = request.FileName,
-        ContentType = request.ContentType,
-        FileSizeBytes = request.FileSizeBytes,
+        Id = mediaId,
+        FileName = file.FileName,
+        ContentType = file.ContentType,
+        FileSizeBytes = file.Length,
         ImportedAt = DateTimeOffset.UtcNow,
-        StorageBucket = "media",
-        StorageKey = $"{Guid.NewGuid()}/{request.FileName}"
+        StorageBucket = bucket,
+        StorageKey = storageKey
     };
 
     await db.MediaItems.AddAsync(mediaItem);
     await db.SaveChangesAsync();
 
-    await thumbnails.RequestThumbnailAsync(mediaItem.Id, mediaItem.StorageBucket, mediaItem.StorageKey);
+    // Store metadata
+    try
+    {
+        await metadataClient.CreateMetadataAsync(mediaId, title, file.FileName, file.ContentType);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to create metadata for media {MediaId}", mediaId);
+    }
 
-    return Results.Created($"/media/{mediaItem.Id}", mediaItem);
-});
+    // Generate thumbnail (fire-and-forget with logging)
+    if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+    {
+        try
+        {
+            await thumbnails.RequestThumbnailAsync(mediaId, bucket, storageKey);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to generate thumbnail for media {MediaId}", mediaId);
+        }
+    }
+
+    logger.LogInformation("Media imported: {MediaId} ({FileName})", mediaId, file.FileName);
+    return Results.Created($"/media/{mediaId}", mediaItem);
+}).DisableAntiforgery();
 
 app.MapGet("/media/{id:guid}", async (Guid id, MediaImportDbContext db) =>
     await db.MediaItems.FindAsync(id) is MediaItem item
@@ -51,4 +104,23 @@ app.MapGet("/media/{id:guid}", async (Guid id, MediaImportDbContext db) =>
 app.MapGet("/media", async (MediaImportDbContext db) =>
     Results.Ok(await db.MediaItems.OrderByDescending(m => m.ImportedAt).ToListAsync()));
 
+app.MapGet("/media/{id:guid}/url", async (Guid id, MediaImportDbContext db, IMinioClient minio) =>
+{
+    var item = await db.MediaItems.FindAsync(id);
+    if (item is null) return Results.NotFound();
+
+    var presignedUrl = await minio.PresignedGetObjectAsync(new PresignedGetObjectArgs()
+        .WithBucket(item.StorageBucket)
+        .WithObject(item.StorageKey)
+        .WithExpiry(3600));
+    return Results.Ok(new { Url = presignedUrl });
+});
+
 app.Run();
+
+static async Task EnsureBucketExistsAsync(IMinioClient minio, string bucket)
+{
+    bool exists = await minio.BucketExistsAsync(new BucketExistsArgs().WithBucket(bucket));
+    if (!exists)
+        await minio.MakeBucketAsync(new MakeBucketArgs().WithBucket(bucket));
+}

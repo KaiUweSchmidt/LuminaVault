@@ -1,0 +1,164 @@
+@page "/gallery"
+@using LuminaVault.WebUI.Services
+@inject MediaApiClient MediaApi
+@rendermode InteractiveServer
+
+<div class="gallery-page">
+    <h1>🖼️ Medienbibliothek</h1>
+    <p class="gallery-description">Übersicht aller importierten Medien mit Thumbnails.</p>
+
+    @if (_isLoading)
+    {
+        <div class="loading-message">Lade Medien…</div>
+    }
+    else if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="error-message">@_errorMessage</div>
+    }
+    else if (_mediaItems.Count == 0)
+    {
+        <div class="gallery-empty">
+            <span class="gallery-empty-icon">📭</span>
+            <p>Noch keine Medien importiert.</p>
+            <a href="import" class="btn-upload">Jetzt importieren</a>
+        </div>
+    }
+    else
+    {
+        <div class="gallery-split">
+            <div class="gallery-list">
+                <table class="media-grid">
+                    <thead>
+                        <tr>
+                            <th class="col-thumb">Thumbnail</th>
+                            <th class="col-date">Aufnahme Datum</th>
+                            <th class="col-size">Dateigröße</th>
+                            <th class="col-type">Datei Typ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _mediaItems)
+                        {
+                            <tr class="@(item.Id == _selectedId ? "selected" : "")" @onclick="() => SelectItemAsync(item)">
+                                <td class="col-thumb">
+                                    @if (_thumbnails.TryGetValue(item.Id, out var url) && url is not null)
+                                    {
+                                        <img src="@url" alt="@item.FileName" class="thumb-img" loading="lazy" />
+                                    }
+                                    else if (item.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <span class="thumb-placeholder">🎬</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="thumb-placeholder">📷</span>
+                                    }
+                                </td>
+                                <td class="col-date">@item.ImportedAt.LocalDateTime.ToString("dd.MM.yyyy HH:mm")</td>
+                                <td class="col-size">@FormatFileSize(item.FileSizeBytes)</td>
+                                <td class="col-type">@item.ContentType</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="gallery-preview">
+                @if (_selectedItem is null)
+                {
+                    <div class="preview-empty">
+                        <span class="preview-empty-icon">👈</span>
+                        <p>Datei aus der Liste auswählen</p>
+                    </div>
+                }
+                else if (_isLoadingPreview)
+                {
+                    <div class="loading-message">Lade Vorschau…</div>
+                }
+                else if (_selectedItem.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+                {
+                    <div class="preview-container">
+                        <video src="@_previewUrl" controls class="preview-media">
+                            Ihr Browser unterstützt dieses Videoformat nicht.
+                        </video>
+                        <div class="preview-info">
+                            <strong>@_selectedItem.FileName</strong>
+                            <small>@_selectedItem.ContentType · @FormatFileSize(_selectedItem.FileSizeBytes)</small>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="preview-container">
+                        <img src="@_previewUrl" alt="@_selectedItem.FileName" class="preview-media" />
+                        <div class="preview-info">
+                            <strong>@_selectedItem.FileName</strong>
+                            <small>@_selectedItem.ContentType · @FormatFileSize(_selectedItem.FileSizeBytes)</small>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<ImportedMediaItem> _mediaItems = [];
+    private readonly Dictionary<Guid, string?> _thumbnails = [];
+    private bool _isLoading = true;
+    private string? _errorMessage;
+
+    private Guid? _selectedId;
+    private ImportedMediaItem? _selectedItem;
+    private string? _previewUrl;
+    private bool _isLoadingPreview;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _mediaItems = await MediaApi.GetImportedMediaAsync();
+
+            var tasks = _mediaItems.Select(async item =>
+            {
+                var url = await MediaApi.GetThumbnailUrlAsync(item.Id);
+                return (item.Id, url);
+            });
+
+            foreach (var (id, url) in await Task.WhenAll(tasks))
+            {
+                _thumbnails[id] = url;
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Fehler beim Laden der Medien: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SelectItemAsync(ImportedMediaItem item)
+    {
+        if (_selectedId == item.Id)
+            return;
+
+        _selectedId = item.Id;
+        _selectedItem = item;
+        _previewUrl = null;
+        _isLoadingPreview = true;
+
+        _previewUrl = await MediaApi.GetOriginalUrlAsync(item.Id);
+        _isLoadingPreview = false;
+    }
+
+    private static string FormatFileSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
+    };
+}
