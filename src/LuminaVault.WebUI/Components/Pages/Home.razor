@@ -13,7 +13,11 @@
     <button @onclick="SearchMedia">Search</button>
 </div>
 
-@if (isLoading)
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <p style="color:red">@errorMessage</p>
+}
+else if (isLoading)
 {
     <p>Loading...</p>
 }
@@ -42,17 +46,23 @@ else
 
     protected override async Task OnInitializedAsync() => await LoadMediaAsync();
 
+    private string? errorMessage;
+
     private async Task LoadMediaAsync()
     {
         isLoading = true;
+        errorMessage = null;
         try { mediaItems = await MediaApi.GetMediaAsync(); }
+        catch (Exception ex) { errorMessage = ex.Message; }
         finally { isLoading = false; }
     }
 
     private async Task SearchMedia()
     {
         isLoading = true;
+        errorMessage = null;
         try { mediaItems = await MediaApi.GetMediaAsync(search: searchQuery); }
+        catch (Exception ex) { errorMessage = ex.Message; }
         finally { isLoading = false; }
     }
 }

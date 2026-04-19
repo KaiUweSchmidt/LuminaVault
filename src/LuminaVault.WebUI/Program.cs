@@ -14,14 +14,17 @@ builder.Services.AddHttpClient<MediaApiClient>(client =>
 
 var app = builder.Build();
 
+app.Logger.LogInformation("LuminaVault WebUI starting in {Environment} environment", app.Environment.EnvironmentName);
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
     app.UseHsts();
+    app.UseHttpsRedirection();
 }
+
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-app.UseHttpsRedirection();
 
 app.UseAntiforgery();
 
@@ -30,5 +33,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.MapDefaultEndpoints();
+
+app.Logger.LogInformation("LuminaVault WebUI configured and ready to start");
 
 app.Run();

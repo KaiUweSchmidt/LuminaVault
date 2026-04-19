@@ -6,11 +6,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UserSecretsId>e903ccb7-1cf9-4baa-8ff3-f3555b053dfb</UserSecretsId>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.2.2" />
-    <PackageReference Include="CommunityToolkit.Aspire.Hosting.Minio" Version="13.1.1" />
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.Minio" />
   </ItemGroup>
 
   <ItemGroup>

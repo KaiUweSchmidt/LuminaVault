@@ -1,0 +1,50 @@
+# --- Standard: Alle Textdateien auf LF normalisieren ---
+* text=auto eol=lf
+
+# --- Windows-spezifische Skripte behalten CRLF ---
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# --- Git-spezifische Dateien ---
+*.gitattributes text eol=lf
+*.gitignore text eol=lf
+
+# --- Projektdateien ---
+*.sln text eol=crlf
+*.csproj text eol=lf
+*.props text eol=lf
+*.targets text eol=lf
+
+# --- Code ---
+*.cs text eol=lf
+*.ts text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.razor text eol=lf
+
+# --- Konfigurationen ---
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.env text eol=lf
+
+# --- Docker ---
+Dockerfile text eol=lf
+*.dockerignore text eol=lf
+
+# --- Bilder & Binärdateien ---
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.mp4 binary
+*.mov binary
+*.avi binary
+*.zip binary
+*.7z binary
+*.pdf binary
