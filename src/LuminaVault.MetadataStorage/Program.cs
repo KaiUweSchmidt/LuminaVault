@@ -56,6 +56,8 @@ app.MapPut("/media/{id:guid}", async (Guid id, UpdateMediaMetadataRequest reques
     metadata.Title = request.Title ?? metadata.Title;
     metadata.Description = request.Description ?? metadata.Description;
     metadata.Tags = request.Tags ?? metadata.Tags;
+    if (request.PersonCount.HasValue)
+        metadata.PersonCount = request.PersonCount;
     metadata.UpdatedAt = DateTimeOffset.UtcNow;
 
     await db.SaveChangesAsync();
@@ -69,6 +71,59 @@ app.MapDelete("/media/{id:guid}", async (Guid id, MetadataDbContext db) =>
     db.MediaMetadata.Remove(metadata);
     await db.SaveChangesAsync();
     return Results.NoContent();
+});
+
+// Face endpoints
+app.MapGet("/faces/{mediaId:guid}", async (Guid mediaId, MetadataDbContext db) =>
+{
+    var faces = await db.Faces
+        .Where(f => f.MediaId == mediaId)
+        .OrderBy(f => f.DetectedAt)
+        .ToListAsync();
+    return Results.Ok(faces);
+});
+
+app.MapPost("/faces", async (CreateFaceRequest request, MetadataDbContext db) =>
+{
+    var face = new Face
+    {
+        Id = Guid.NewGuid(),
+        MediaId = request.MediaId,
+        FaceDescription = request.FaceDescription,
+        Name = request.Name,
+        DetectedAt = DateTimeOffset.UtcNow
+    };
+    await db.Faces.AddAsync(face);
+    await db.SaveChangesAsync();
+    return Results.Created($"/faces/{face.MediaId}/{face.Id}", face);
+});
+
+app.MapPut("/faces/{id:guid}", async (Guid id, UpdateFaceNameRequest request, MetadataDbContext db) =>
+{
+    var face = await db.Faces.FindAsync(id);
+    if (face is null) return Results.NotFound();
+    face.Name = request.Name;
+    await db.SaveChangesAsync();
+    return Results.Ok(face);
+});
+
+app.MapDelete("/faces/{id:guid}", async (Guid id, MetadataDbContext db) =>
+{
+    var face = await db.Faces.FindAsync(id);
+    if (face is null) return Results.NotFound();
+    db.Faces.Remove(face);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+});
+
+// Find media items with persons similar to the given media item
+app.MapGet("/faces/similar/{mediaId:guid}", async (Guid mediaId, MetadataDbContext db) =>
+{
+    var results = await db.MediaMetadata
+        .Where(m => m.PersonCount > 0 && m.Id != mediaId)
+        .OrderByDescending(m => m.PersonCount)
+        .ToListAsync();
+    return Results.Ok(results);
 });
 
 app.Run();

@@ -8,6 +8,7 @@
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.2.2" />
     <PackageVersion Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.2.2" />
     <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Minio" Version="13.1.1" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Ollama" Version="13.1.1" />
     <PackageVersion Include="CommunityToolkit.Aspire.Minio.Client" Version="13.1.1" />
 
     <!-- Entity Framework Core -->

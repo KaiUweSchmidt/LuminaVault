@@ -20,6 +20,18 @@ public class MediaApiClient(HttpClient httpClient)
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<List<SearchResult>>() ?? [];
     }
+
+    public async Task<List<Face>> GetFacesAsync(Guid mediaId) =>
+        await httpClient.GetFromJsonAsync<List<Face>>($"/api/metadata/faces/{mediaId}") ?? [];
+
+    public async Task<bool> UpdateFaceNameAsync(Guid faceId, string? name)
+    {
+        var response = await httpClient.PutAsJsonAsync($"/api/metadata/faces/{faceId}", new { Name = name });
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<List<MediaItem>> FindSimilarPersonsAsync(Guid mediaId) =>
+        await httpClient.GetFromJsonAsync<List<MediaItem>>($"/api/metadata/faces/similar/{mediaId}") ?? [];
 }
 
 public record MediaItem(
@@ -30,6 +42,14 @@ public record MediaItem(
     double? GpsLatitude,
     double? GpsLongitude,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt,
+    int? PersonCount = null);
+
+public record Face(
+    Guid Id,
+    Guid MediaId,
+    string? Name,
+    string FaceDescription,
+    DateTimeOffset DetectedAt);
 
 public record SearchResult(Guid MediaId, double Distance);

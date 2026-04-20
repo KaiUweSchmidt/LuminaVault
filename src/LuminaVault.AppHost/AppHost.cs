@@ -14,6 +14,11 @@ var vectorDb = postgres.AddDatabase("luminavault-vectors");
 var minio = builder.AddMinioContainer("minio")
     .WithLifetime(ContainerLifetime.Persistent);
 
+// Ollama for AI/LLM inference
+var ollama = builder.AddOllama("ollama")
+    .WithLifetime(ContainerLifetime.Persistent)
+    .AddModel("llava");
+
 // Backend services
 var metadataStorage = builder.AddProject<Projects.LuminaVault_MetadataStorage>("metadata-storage")
     .WithEnvironment("DOTNET_STARTUP_HOOKS", "")
@@ -35,12 +40,22 @@ var thumbnailGeneration = builder.AddProject<Projects.LuminaVault_ThumbnailGener
     .WithReference(minio)
     .WaitFor(minio);
 
+var objectRecognition = builder.AddProject<Projects.LuminaVault_ObjectRecognition>("object-recognition")
+    .WithEnvironment("DOTNET_STARTUP_HOOKS", "")
+    .WithReference(minio)
+    .WithReference(metadataStorage)
+    .WithReference(ollama)
+    .WaitFor(minio)
+    .WaitFor(metadataStorage)
+    .WaitFor(ollama);
+
 var mediaImport = builder.AddProject<Projects.LuminaVault_MediaImport>("media-import")
     .WithEnvironment("DOTNET_STARTUP_HOOKS", "")
     .WithReference(minio)
     .WithReference(metadataDb)
     .WithReference(metadataStorage)
     .WithReference(thumbnailGeneration)
+    .WithReference(objectRecognition)
     .WaitFor(minio)
     .WaitFor(metadataDb);
 
@@ -52,6 +67,7 @@ var apiGateway = builder.AddProject<Projects.LuminaVault_ApiGateway>("api-gatewa
     .WithReference(vectorSearch)
     .WithReference(thumbnailGeneration)
     .WithReference(mediaImport)
+    .WithReference(objectRecognition)
     .WaitFor(metadataStorage)
     .WaitFor(aiTagging)
     .WaitFor(vectorSearch)

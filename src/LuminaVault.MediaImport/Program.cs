@@ -11,6 +11,9 @@ builder.AddMinioClient("minio");
 builder.Services.AddHttpClient<ThumbnailServiceClient>(client =>
     client.BaseAddress = new Uri("http://thumbnail-generation"));
 
+builder.Services.AddHttpClient<ObjectRecognitionServiceClient>(client =>
+    client.BaseAddress = new Uri("http://object-recognition"));
+
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
@@ -22,7 +25,8 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.MapPost("/import", async (ImportMediaRequest request, IMinioClient minio,
-    MediaImportDbContext db, ThumbnailServiceClient thumbnails) =>
+    MediaImportDbContext db, ThumbnailServiceClient thumbnails,
+    ObjectRecognitionServiceClient recognition) =>
 {
     var mediaItem = new MediaItem
     {
@@ -39,6 +43,19 @@ app.MapPost("/import", async (ImportMediaRequest request, IMinioClient minio,
     await db.SaveChangesAsync();
 
     await thumbnails.RequestThumbnailAsync(mediaItem.Id, mediaItem.StorageBucket, mediaItem.StorageKey);
+
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            await recognition.RecognizeAsync(mediaItem.Id, mediaItem.ContentType, mediaItem.StorageBucket, mediaItem.StorageKey);
+        }
+        catch (Exception ex)
+        {
+            var logger = app.Services.GetRequiredService<ILogger<Program>>();
+            logger.LogError(ex, "Background object recognition failed for media {MediaId}", mediaItem.Id);
+        }
+    });
 
     return Results.Created($"/media/{mediaItem.Id}", mediaItem);
 });
