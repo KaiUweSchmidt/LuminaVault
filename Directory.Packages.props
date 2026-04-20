@@ -8,6 +8,7 @@
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.2.2" />
     <PackageVersion Include="Aspire.Npgsql.EntityFrameworkCore.PostgreSQL" Version="13.2.2" />
     <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Minio" Version="13.1.1" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Ollama" Version="13.1.1" />
     <PackageVersion Include="CommunityToolkit.Aspire.Minio.Client" Version="13.1.1" />
 
     <!-- Entity Framework Core -->
@@ -24,6 +25,12 @@
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.2.0" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.2.0" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Yarp" Version="10.5.0" />
+
+    <!-- Testing -->
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.2.2" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit.v3" Version="3.1.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.0" />
 
     <!-- Other packages -->
     <PackageVersion Include="Pgvector.EntityFrameworkCore" Version="0.3.0" />

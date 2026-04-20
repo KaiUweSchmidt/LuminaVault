@@ -12,6 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.PostgreSQL" />
     <PackageReference Include="CommunityToolkit.Aspire.Hosting.Minio" />
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.Ollama" />
   </ItemGroup>
 
   <ItemGroup>
@@ -21,6 +22,7 @@
     <ProjectReference Include="..\LuminaVault.AiTagging\LuminaVault.AiTagging.csproj" />
     <ProjectReference Include="..\LuminaVault.VectorSearch\LuminaVault.VectorSearch.csproj" />
     <ProjectReference Include="..\LuminaVault.ThumbnailGeneration\LuminaVault.ThumbnailGeneration.csproj" />
+    <ProjectReference Include="..\LuminaVault.ObjectRecognition\LuminaVault.ObjectRecognition.csproj" />
     <ProjectReference Include="..\LuminaVault.WebUI\LuminaVault.WebUI.csproj" />
   </ItemGroup>
 

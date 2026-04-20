@@ -3,14 +3,51 @@
 @inject MediaApiClient MediaApi
 @rendermode InteractiveServer
 
-<PageTitle>LuminaVault - Media Library</PageTitle>
+<PageTitle>LuminaVault - AI-Powered Media Management</PageTitle>
 
-<h1>LuminaVault</h1>
-<p>AI-powered media management &amp; search</p>
+<div class="landing">
+    <header class="landing-hero">
+        <h1>🌟 LuminaVault</h1>
+        <p class="landing-tagline">AI-powered photo &amp; video management</p>
+        <div class="landing-search">
+            <input @bind="searchQuery" @bind:event="oninput" placeholder="Search your media library..." />
+            <button @onclick="SearchMedia">🔍 Search</button>
+        </div>
+    </header>
 
-<div>
-    <input @bind="searchQuery" @bind:event="oninput" placeholder="Search media..." />
-    <button @onclick="SearchMedia">Search</button>
+    <section class="landing-features">
+        <div class="feature-card">
+            <span class="feature-icon">🔍</span>
+            <h3>Smart Search</h3>
+            <p>Full-text, tag, and similarity search using vector embeddings</p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">🤖</span>
+            <h3>AI Tagging</h3>
+            <p>Automatic classification and OCR via local or cloud models</p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">🗂️</span>
+            <h3>Categories</h3>
+            <p>Create, edit, and assign custom categories</p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">📍</span>
+            <h3>GPS Integration</h3>
+            <p>Extract and visualize location data on maps</p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">🖼️</span>
+            <h3>Media Processing</h3>
+            <p>Thumbnails, video previews, duplicate detection</p>
+        </div>
+        <div class="feature-card">
+            <span class="feature-icon">⚙️</span>
+            <h3>Scalable</h3>
+            <p>Handles 22,000+ photos and 100 GB of data</p>
+        </div>
+    </section>
+
 </div>
 
 @if (!string.IsNullOrEmpty(errorMessage))
@@ -27,26 +64,203 @@ else if (mediaItems.Count == 0)
 }
 else
 {
-    <ul>
+    <div class="gallery">
         @foreach (var item in mediaItems)
         {
-            <li>
-                <strong>@item.Title</strong>
-                <span>@string.Join(", ", item.Tags)</span>
-                <small>@item.CreatedAt.ToString("yyyy-MM-dd")</small>
-            </li>
+            <div class="gallery-item" @oncontextmenu="(e) => ShowContextMenu(e, item)" @oncontextmenu:preventDefault="true">
+                <div class="gallery-item-info">
+                    <strong>@item.Title</strong>
+                    @if (item.PersonCount.HasValue && item.PersonCount > 0)
+                    {
+                        <span class="person-badge" title="@item.PersonCount @(item.PersonCount == 1 ? "Person" : "Persons") detected">
+                            👤 @item.PersonCount
+                        </span>
+                    }
+                    <span class="tags">@string.Join(", ", item.Tags)</span>
+                    <small>@item.CreatedAt.ToString("yyyy-MM-dd")</small>
+                </div>
+            </div>
         }
-    </ul>
+    </div>
 }
+
+@if (contextMenuVisible)
+{
+    <div class="context-menu" style="left:@(contextMenuX)px; top:@(contextMenuY)px;" @onmouseleave="HideContextMenu">
+        @if (contextMenuItem?.PersonCount > 0)
+        {
+            <div class="context-menu-item" @onclick="FindSimilarPersons">🔍 Ähnliche Person suchen</div>
+        }
+        else
+        {
+            <div class="context-menu-item disabled">🔍 Ähnliche Person suchen (keine Personen erkannt)</div>
+        }
+        <div class="context-menu-item" @onclick="ShowFaces">👤 Gesichter anzeigen</div>
+    </div>
+}
+
+@if (similarPersonsVisible && similarPersons.Count > 0)
+{
+    <div class="similar-persons-panel">
+        <div class="similar-persons-header">
+            <h3>Ähnliche Personen gefunden</h3>
+            <button @onclick="CloseSimilarPersons">✕</button>
+        </div>
+        <div class="similar-persons-list">
+            @foreach (var item in similarPersons)
+            {
+                <div class="similar-person-item">
+                    <strong>@item.Title</strong>
+                    <span class="person-badge">👤 @item.PersonCount</span>
+                    <span class="tags">@string.Join(", ", item.Tags)</span>
+                    <small>@item.CreatedAt.ToString("yyyy-MM-dd")</small>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@if (similarPersonsVisible && similarPersons.Count == 0 && !isSearching)
+{
+    <div class="similar-persons-panel">
+        <div class="similar-persons-header">
+            <h3>Ähnliche Personen</h3>
+            <button @onclick="CloseSimilarPersons">✕</button>
+        </div>
+        <p>Keine weiteren Medien mit erkannten Personen gefunden.</p>
+    </div>
+}
+
+@if (facesVisible && faces.Count > 0)
+{
+    <div class="similar-persons-panel">
+        <div class="similar-persons-header">
+            <h3>Erkannte Gesichter in "@contextMenuItem?.Title"</h3>
+            <button @onclick="CloseFaces">✕</button>
+        </div>
+        <div class="faces-list">
+            @foreach (var face in faces)
+            {
+                <div class="face-item">
+                    <div class="face-description">@face.FaceDescription</div>
+                    @if (!string.IsNullOrWhiteSpace(face.Name))
+                    {
+                        <div class="face-name"><strong>Name:</strong> @face.Name</div>
+                    }
+                    <div class="face-edit">
+                        <input @bind="faceNameInputs[face.Id]" placeholder="Name vergeben..." />
+                        <button @onclick="() => SaveFaceName(face.Id)">Speichern</button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@if (facesVisible && faces.Count == 0 && !isSearching)
+{
+    <div class="similar-persons-panel">
+        <div class="similar-persons-header">
+            <h3>Gesichter</h3>
+            <button @onclick="CloseFaces">✕</button>
+        </div>
+        <p>Keine Gesichter für dieses Medium gefunden.</p>
+    </div>
+}
+
+<style>
+    .search-bar { margin-bottom: 1rem; }
+    .gallery { display: flex; flex-wrap: wrap; gap: 1rem; }
+    .gallery-item {
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 0.75rem;
+        min-width: 200px;
+        cursor: context-menu;
+        user-select: none;
+        background: white;
+    }
+    .gallery-item:hover { background: #f5f5f5; }
+    .gallery-item-info { display: flex; flex-direction: column; gap: 0.25rem; }
+    .person-badge {
+        display: inline-block;
+        background: #4a90d9;
+        color: white;
+        border-radius: 12px;
+        padding: 2px 8px;
+        font-size: 0.8em;
+    }
+    .tags { color: #666; font-size: 0.85em; }
+    .context-menu {
+        position: fixed;
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        box-shadow: 2px 2px 8px rgba(0,0,0,0.2);
+        z-index: 1000;
+        min-width: 220px;
+    }
+    .context-menu-item {
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+    }
+    .context-menu-item:hover { background: #f0f0f0; }
+    .context-menu-item.disabled { color: #aaa; cursor: default; }
+    .similar-persons-panel {
+        margin-top: 1rem;
+        border: 1px solid #4a90d9;
+        border-radius: 4px;
+        padding: 1rem;
+        background: #f8fbff;
+    }
+    .similar-persons-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+    .similar-persons-header h3 { margin: 0; }
+    .similar-person-item {
+        border-bottom: 1px solid #ddd;
+        padding: 0.5rem 0;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .faces-list { display: flex; flex-direction: column; gap: 1rem; }
+    .face-item {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 0.75rem;
+        background: white;
+    }
+    .face-description { font-size: 0.9em; color: #333; margin-bottom: 0.5rem; }
+    .face-name { font-size: 0.85em; margin-bottom: 0.5rem; }
+    .face-edit { display: flex; gap: 0.5rem; }
+    .face-edit input { flex: 1; padding: 0.25rem 0.5rem; }
+</style>
 
 @code {
     private List<MediaItem> mediaItems = [];
     private string searchQuery = string.Empty;
     private bool isLoading = false;
+    private bool isSearching = false;
+    private string? errorMessage;
+
+    private bool contextMenuVisible = false;
+    private double contextMenuX = 0;
+    private double contextMenuY = 0;
+    private MediaItem? contextMenuItem = null;
+
+    private bool similarPersonsVisible = false;
+    private List<MediaItem> similarPersons = [];
+
+    private bool facesVisible = false;
+    private List<Face> faces = [];
+    private Dictionary<Guid, string?> faceNameInputs = [];
 
     protected override async Task OnInitializedAsync() => await LoadMediaAsync();
-
-    private string? errorMessage;
 
     private async Task LoadMediaAsync()
     {
@@ -65,5 +279,84 @@ else
         catch (Exception ex) { errorMessage = ex.Message; }
         finally { isLoading = false; }
     }
-}
 
+    private void ShowContextMenu(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, MediaItem item)
+    {
+        contextMenuX = e.ClientX;
+        contextMenuY = e.ClientY;
+        contextMenuItem = item;
+        contextMenuVisible = true;
+        similarPersonsVisible = false;
+        facesVisible = false;
+    }
+
+    private void HideContextMenu() => contextMenuVisible = false;
+
+    private async Task FindSimilarPersons()
+    {
+        contextMenuVisible = false;
+        if (contextMenuItem is null) return;
+        isSearching = true;
+        similarPersonsVisible = true;
+        facesVisible = false;
+        try
+        {
+            similarPersons = await MediaApi.FindSimilarPersonsAsync(contextMenuItem.Id);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            similarPersons = [];
+        }
+        finally { isSearching = false; }
+    }
+
+    private async Task ShowFaces()
+    {
+        contextMenuVisible = false;
+        if (contextMenuItem is null) return;
+        isSearching = true;
+        facesVisible = true;
+        similarPersonsVisible = false;
+        try
+        {
+            faces = await MediaApi.GetFacesAsync(contextMenuItem.Id);
+            faceNameInputs = faces.ToDictionary(f => f.Id, f => f.Name);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            faces = [];
+        }
+        finally { isSearching = false; }
+    }
+
+    private async Task SaveFaceName(Guid faceId)
+    {
+        if (!faceNameInputs.TryGetValue(faceId, out var name)) return;
+        try
+        {
+            await MediaApi.UpdateFaceNameAsync(faceId, name);
+            var face = faces.FirstOrDefault(f => f.Id == faceId);
+            if (face is not null)
+            {
+                var idx = faces.IndexOf(face);
+                faces[idx] = face with { Name = name };
+            }
+        }
+        catch (Exception ex) { errorMessage = ex.Message; }
+    }
+
+    private void CloseSimilarPersons()
+    {
+        similarPersonsVisible = false;
+        similarPersons = [];
+    }
+
+    private void CloseFaces()
+    {
+        facesVisible = false;
+        faces = [];
+        faceNameInputs = [];
+    }
+}

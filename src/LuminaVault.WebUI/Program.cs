@@ -1,5 +1,6 @@
 using LuminaVault.WebUI.Components;
 using LuminaVault.WebUI.Services;
+using LuminaVault.WebUI.Settings;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,6 +9,8 @@ builder.AddServiceDefaults();
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+builder.Services.Configure<ImportSettings>(builder.Configuration.GetSection(ImportSettings.SectionName));
 
 builder.Services.AddHttpClient<MediaApiClient>(client =>
     client.BaseAddress = new Uri("http://api-gateway"));
