@@ -176,13 +176,17 @@
         _uploadedCount = 0;
     }
 
-    private static string FormatFileSize(long bytes) => bytes switch
+    private static string FormatFileSize(long bytes)
     {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-        < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
-        _ => $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
-    };
+        const long kb = 1024;
+        const long mb = kb * 1024;
+        const long gb = mb * 1024;
+
+        return bytes >= gb ? $"{bytes / (double)gb:F1} GB"
+            : bytes >= mb ? $"{bytes / (double)mb:F1} MB"
+            : bytes >= kb ? $"{bytes / (double)kb:F1} KB"
+            : $"{bytes} B";
+    }
 
     private sealed class UploadFileInfo
     {

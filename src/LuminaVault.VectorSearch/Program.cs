@@ -6,8 +6,9 @@ using Pgvector.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.AddNpgsqlDbContext<VectorSearchDbContext>("luminavault-vectors",
-    configureDbContextOptions: options => options.UseNpgsql(o => o.UseVector()));
+builder.Services.AddDbContext<VectorSearchDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("luminavault-vectors"),
+        o => o.UseVector()));
 
 var app = builder.Build();
 
@@ -52,6 +53,13 @@ app.MapPost("/search", async (SearchRequest request, VectorSearchDbContext db) =
         .Select(e => new SearchResult(e.MediaId, e.Embedding.L2Distance(queryVector)))
         .ToListAsync();
     return Results.Ok(results);
+});
+
+app.MapDelete("/admin/purge-all", async (VectorSearchDbContext db, ILogger<Program> logger) =>
+{
+    var count = await db.MediaEmbeddings.ExecuteDeleteAsync();
+    logger.LogWarning("[ADMIN] Purge-All: {Count} Embeddings gelöscht", count);
+    return Results.Ok(new { DeletedEmbeddings = count });
 });
 
 app.Run();

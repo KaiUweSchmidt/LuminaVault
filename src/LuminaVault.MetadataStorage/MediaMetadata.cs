@@ -19,6 +19,10 @@ public class Face
     public Guid MediaId { get; set; }
     public string? Name { get; set; }
     public string FaceDescription { get; set; } = string.Empty;
+    public double BboxX { get; set; }
+    public double BboxY { get; set; }
+    public double BboxWidth { get; set; }
+    public double BboxHeight { get; set; }
     public DateTimeOffset DetectedAt { get; set; }
 }
 
@@ -39,6 +43,10 @@ public record UpdateMediaMetadataRequest(
 public record CreateFaceRequest(
     Guid MediaId,
     string FaceDescription,
-    string? Name = null);
+    string? Name = null,
+    double BboxX = 0,
+    double BboxY = 0,
+    double BboxWidth = 0,
+    double BboxHeight = 0);
 
 public record UpdateFaceNameRequest(string? Name);

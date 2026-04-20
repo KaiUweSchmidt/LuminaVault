@@ -1,4 +1,5 @@
 using LuminaVault.MediaImport;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Minio;
 using Minio.DataModel.Args;
@@ -6,14 +7,30 @@ using Minio.DataModel.Args;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.AddNpgsqlDbContext<MediaImportDbContext>("luminavault-metadata");
-builder.AddMinioClient("minio");
+
+builder.Services.AddDbContext<MediaImportDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("luminavault-metadata")));
+
+builder.Services.AddSingleton<IMinioClient>(sp =>
+{
+    var config = builder.Configuration.GetSection("Minio");
+    return new MinioClient()
+        .WithEndpoint(config["Endpoint"])
+        .WithCredentials(config["AccessKey"], config["SecretKey"])
+        .Build();
+});
 
 builder.Services.AddHttpClient<ThumbnailServiceClient>(client =>
-    client.BaseAddress = new Uri("http://thumbnail-generation"));
+    client.BaseAddress = new Uri(builder.Configuration["Services:ThumbnailGeneration"]
+        ?? "http://thumbnail-generation:8080"));
 
 builder.Services.AddHttpClient<ObjectRecognitionServiceClient>(client =>
-    client.BaseAddress = new Uri("http://object-recognition"));
+    client.BaseAddress = new Uri(builder.Configuration["Services:ObjectRecognition"]
+        ?? "http://object-recognition:8080"));
+
+builder.Services.AddHttpClient<MetadataStorageClient>(client =>
+    client.BaseAddress = new Uri(builder.Configuration["Services:MetadataStorage"]
+        ?? "http://metadata-storage:8080"));
 
 var app = builder.Build();
 
@@ -29,7 +46,7 @@ using (var scope = app.Services.CreateScope())
 
 app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     MediaImportDbContext db, ThumbnailServiceClient thumbnails,
-    ObjectRecognitionServiceClient recognition, ILogger<Program> logger) =>
+    ObjectRecognitionServiceClient recognition, MetadataStorageClient metadataStorage, ILogger<Program> logger) =>
 {
     logger.LogInformation("[PIPELINE] ===== Import gestartet =====");
 
@@ -91,6 +108,17 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     await db.SaveChangesAsync();
     logger.LogInformation("[PIPELINE] Schritt 3/5: DB-Speicherung abgeschlossen");
 
+    // Create metadata entry in MetadataStorage service
+    try
+    {
+        await metadataStorage.CreateMetadataAsync(mediaId, title, file.FileName, file.ContentType);
+        logger.LogInformation("[PIPELINE] MetadataStorage-Eintrag erstellt für MediaId={MediaId}", mediaId);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "[PIPELINE] MetadataStorage-Eintrag FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
+    }
+
     // Generate thumbnail
     if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
     {
@@ -143,11 +171,47 @@ app.MapGet("/media/{id:guid}/url", async (Guid id, MediaImportDbContext db, IMin
     var item = await db.MediaItems.FindAsync(id);
     if (item is null) return Results.NotFound();
 
-    var presignedUrl = await minio.PresignedGetObjectAsync(new PresignedGetObjectArgs()
+    var ms = new MemoryStream();
+    await minio.GetObjectAsync(new GetObjectArgs()
         .WithBucket(item.StorageBucket)
         .WithObject(item.StorageKey)
-        .WithExpiry(3600));
-    return Results.Ok(new { Url = presignedUrl });
+        .WithCallbackStream(stream => stream.CopyTo(ms)));
+    ms.Position = 0;
+
+    return Results.File(ms, item.ContentType, item.FileName);
+});
+
+app.MapDelete("/admin/purge-all", async (MediaImportDbContext db, IMinioClient minio, ILogger<Program> logger) =>
+{
+    var deletedItems = await db.MediaItems.ExecuteDeleteAsync();
+    logger.LogWarning("[ADMIN] Purge-All: {Count} MediaItems aus DB gelöscht", deletedItems);
+
+    var deletedObjects = 0;
+    string[] buckets = ["media", "thumbnails"];
+    foreach (var bucket in buckets)
+    {
+        var exists = await minio.BucketExistsAsync(new BucketExistsArgs().WithBucket(bucket));
+        if (!exists) continue;
+
+        var objects = new List<string>();
+        var listArgs = new ListObjectsArgs().WithBucket(bucket).WithRecursive(true);
+        await foreach (var item in minio.ListObjectsEnumAsync(listArgs))
+        {
+            objects.Add(item.Key);
+        }
+
+        if (objects.Count > 0)
+        {
+            await minio.RemoveObjectsAsync(new RemoveObjectsArgs()
+                .WithBucket(bucket)
+                .WithObjects(objects));
+            deletedObjects += objects.Count;
+        }
+
+        logger.LogWarning("[ADMIN] Purge-All: {Count} Objekte aus Bucket '{Bucket}' gelöscht", objects.Count, bucket);
+    }
+
+    return Results.Ok(new { DeletedMediaItems = deletedItems, DeletedObjects = deletedObjects });
 });
 
 app.Run();
@@ -158,3 +222,5 @@ static async Task EnsureBucketExistsAsync(IMinioClient minio, string bucket)
     if (!exists)
         await minio.MakeBucketAsync(new MakeBucketArgs().WithBucket(bucket));
 }
+
+public partial class Program { }

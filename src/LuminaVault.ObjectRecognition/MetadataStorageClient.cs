@@ -22,13 +22,22 @@ public class MetadataStorageClient(HttpClient httpClient, ILogger<MetadataStorag
         }
     }
 
-    public async Task StoreFaceAsync(Guid mediaId, string faceDescription)
+    public async Task StoreFaceAsync(Guid mediaId, string faceDescription,
+        double bboxX, double bboxY, double bboxWidth, double bboxHeight)
     {
         logger.LogInformation("[PIPELINE:MetaClient] StoreFace → POST /faces für MediaId={MediaId} ({DescLen} Zeichen)",
             mediaId, faceDescription.Length);
         try
         {
-            var request = new { MediaId = mediaId, FaceDescription = faceDescription };
+            var request = new
+            {
+                MediaId = mediaId,
+                FaceDescription = faceDescription,
+                BboxX = bboxX,
+                BboxY = bboxY,
+                BboxWidth = bboxWidth,
+                BboxHeight = bboxHeight
+            };
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var response = await httpClient.PostAsJsonAsync("/faces", request);
             sw.Stop();

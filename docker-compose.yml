@@ -1,0 +1,159 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: luminavault
+      POSTGRES_PASSWORD: luminavault
+      POSTGRES_DB: luminavault-metadata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U luminavault -d luminavault-metadata"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  metadata-storage:
+    build:
+      context: .
+      dockerfile: src/LuminaVault.MetadataStorage/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__luminavault-metadata: "Host=postgres;Database=luminavault-metadata;Username=luminavault;Password=luminavault"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ai-tagging:
+    build:
+      context: .
+      dockerfile: src/LuminaVault.AiTagging/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__luminavault-metadata: "Host=postgres;Database=luminavault-metadata;Username=luminavault;Password=luminavault"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  vector-search:
+    build:
+      context: .
+      dockerfile: src/LuminaVault.VectorSearch/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__luminavault-vectors: "Host=postgres;Database=luminavault-vectors;Username=luminavault;Password=luminavault"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  thumbnail-generation:
+    build:
+      context: .
+      dockerfile: src/LuminaVault.ThumbnailGeneration/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: minioadmin
+      Minio__SecretKey: minioadmin
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  object-recognition:
+    build:
+      context: .
+      dockerfile: src/LuminaVault.ObjectRecognition/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: minioadmin
+      Minio__SecretKey: minioadmin
+      Services__Ollama: http://ollama:11434
+      Services__MetadataStorage: http://metadata-storage:8080
+    depends_on:
+      minio:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      metadata-storage:
+        condition: service_started
+
+  media-import:
+    build:
+      context: .
+      dockerfile: src/LuminaVault.MediaImport/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__luminavault-metadata: "Host=postgres;Database=luminavault-metadata;Username=luminavault;Password=luminavault"
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: minioadmin
+      Minio__SecretKey: minioadmin
+      Services__ThumbnailGeneration: http://thumbnail-generation:8080
+      Services__ObjectRecognition: http://object-recognition:8080
+      Services__MetadataStorage: http://metadata-storage:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      metadata-storage:
+        condition: service_started
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: src/LuminaVault.ApiGateway/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+    depends_on:
+      - media-import
+      - metadata-storage
+      - ai-tagging
+      - vector-search
+      - thumbnail-generation
+      - object-recognition
+
+  webui:
+    build:
+      context: .
+      dockerfile: src/LuminaVault.WebUI/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Services__ApiGateway: http://api-gateway:8080
+    volumes:
+      - webui-keys:/root/.aspnet/DataProtection-Keys
+    depends_on:
+      - api-gateway
+    ports:
+      - "5001:8080"
+
+volumes:
+  postgres-data:
+  minio-data:
+  ollama-data:
+  webui-keys:

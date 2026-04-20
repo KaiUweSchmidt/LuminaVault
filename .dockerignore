@@ -1,0 +1,10 @@
+**/.git
+**/.vs
+**/bin
+**/obj
+**/artifacts
+**/.dockerignore
+**/Dockerfile
+**/*.user
+**/*.suo
+**/node_modules

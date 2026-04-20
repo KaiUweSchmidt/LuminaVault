@@ -11,7 +11,7 @@ public record RecognizeResponse(
     int PersonCount,
     List<FaceInfo> Faces);
 
-public record FaceInfo(string FaceDescription);
+public record FaceInfo(string FaceDescription, double BboxX, double BboxY, double BboxWidth, double BboxHeight);
 
 public record OllamaGenerateRequest(
     string Model,
@@ -21,5 +21,3 @@ public record OllamaGenerateRequest(
     string? Format = null);
 
 public record OllamaGenerateResponse(string Response);
-
-public record PersonCountResult(int PersonCount);

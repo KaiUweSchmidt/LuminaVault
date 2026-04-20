@@ -1,4 +1,5 @@
 using LuminaVault.ThumbnailGeneration;
+using Microsoft.AspNetCore.Mvc;
 using Minio;
 using Minio.DataModel.Args;
 using SixLabors.ImageSharp;
@@ -7,7 +8,15 @@ using SixLabors.ImageSharp.Processing;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.AddMinioClient("minio");
+
+builder.Services.AddSingleton<IMinioClient>(sp =>
+{
+    var config = builder.Configuration.GetSection("Minio");
+    return new MinioClient()
+        .WithEndpoint(config["Endpoint"])
+        .WithCredentials(config["AccessKey"], config["SecretKey"])
+        .Build();
+});
 
 var app = builder.Build();
 
@@ -66,17 +75,22 @@ app.MapGet("/thumbnails/{mediaId:guid}", async (Guid mediaId, IMinioClient minio
 
     try
     {
-        var presignedUrl = await minio.PresignedGetObjectAsync(new PresignedGetObjectArgs()
+        var ms = new MemoryStream();
+        await minio.GetObjectAsync(new GetObjectArgs()
             .WithBucket(thumbnailBucket)
             .WithObject(thumbnailKey)
-            .WithExpiry(3600));
-        return Results.Ok(new { Url = presignedUrl });
+            .WithCallbackStream(stream => stream.CopyTo(ms)));
+        ms.Position = 0;
+
+        return Results.File(ms, "image/jpeg");
     }
     catch
     {
         return Results.NotFound();
     }
 });
+
+
 
 app.Run();
 

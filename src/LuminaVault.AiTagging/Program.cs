@@ -4,7 +4,8 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.AddNpgsqlDbContext<AiTaggingDbContext>("luminavault-metadata");
+builder.Services.AddDbContext<AiTaggingDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("luminavault-metadata")));
 
 var app = builder.Build();
 
