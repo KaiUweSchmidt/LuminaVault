@@ -1,0 +1,196 @@
+@page "/import"
+@using LuminaVault.WebUI.Services
+@using LuminaVault.WebUI.Settings
+@using Microsoft.Extensions.Options
+@inject MediaApiClient MediaApi
+@inject IOptions<ImportSettings> ImportOptions
+@rendermode InteractiveServer
+
+<div class="import-page">
+    <h1>📤 Medien importieren</h1>
+    <p class="import-description">Lade Fotos oder Videos hoch. Thumbnails werden automatisch generiert. (Max. @Settings.MaxFileCount Dateien, je @FormatFileSize(Settings.MaxFileSizeBytes))</p>
+
+    <div class="upload-area @(_isDragOver ? "drag-over" : "")"
+         @ondragenter="HandleDragEnter"
+         @ondragleave="HandleDragLeave"
+         @ondragover:preventDefault>
+        <InputFile OnChange="HandleFilesSelected" multiple accept="image/*,video/*" />
+        <div class="upload-placeholder">
+            <span class="upload-icon">📁</span>
+            <p>Dateien hierher ziehen oder klicken zum Auswählen</p>
+            <small>Unterstützt: JPG, PNG, GIF, WebP, MP4, MOV, AVI</small>
+        </div>
+    </div>
+
+    @if (_selectedFiles.Count > 0)
+    {
+        <div class="upload-queue">
+            <h2>Ausgewählte Dateien (@_selectedFiles.Count)</h2>
+            @foreach (var file in _selectedFiles)
+            {
+                <div class="upload-item @(file.Status.ToLowerInvariant())">
+                    <span class="upload-item-icon">
+                        @(file.ContentType.StartsWith("video/") ? "🎬" : "📷")
+                    </span>
+                    <div class="upload-item-info">
+                        <span class="upload-item-name">@file.FileName</span>
+                        <small>@FormatFileSize(file.FileSize)</small>
+                    </div>
+                    <span class="upload-item-status">
+                        @switch (file.Status)
+                        {
+                            case "Pending":
+                                <span>⏳</span>
+                                break;
+                            case "Uploading":
+                                <span class="spinner">⏳</span>
+                                break;
+                            case "Done":
+                                <span>✅</span>
+                                break;
+                            case "Error":
+                                <span title="@file.ErrorMessage">❌</span>
+                                break;
+                        }
+                    </span>
+                </div>
+            }
+
+            <div class="upload-actions">
+                <button class="btn-upload" @onclick="UploadAllAsync" disabled="@_isUploading">
+                    @(_isUploading ? "Wird hochgeladen…" : "Alle hochladen")
+                </button>
+                <button class="btn-clear" @onclick="ClearQueue" disabled="@_isUploading">
+                    Zurücksetzen
+                </button>
+            </div>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="error-message">@_errorMessage</div>
+    }
+
+    @if (_uploadedCount > 0)
+    {
+        <div class="upload-success">
+            ✅ @_uploadedCount Datei(en) erfolgreich importiert!
+        </div>
+    }
+</div>
+
+@code {
+    private ImportSettings Settings => ImportOptions.Value;
+
+    private readonly List<UploadFileInfo> _selectedFiles = [];
+    private bool _isUploading;
+    private bool _isDragOver;
+    private string? _errorMessage;
+    private int _uploadedCount;
+
+    private void HandleDragEnter() => _isDragOver = true;
+    private void HandleDragLeave() => _isDragOver = false;
+
+    private void HandleFilesSelected(InputFileChangeEventArgs e)
+    {
+        _isDragOver = false;
+        _errorMessage = null;
+        _uploadedCount = 0;
+
+        var remaining = Settings.MaxFileCount - _selectedFiles.Count;
+        if (remaining <= 0)
+        {
+            _errorMessage = $"Maximal {Settings.MaxFileCount} Dateien erlaubt.";
+            return;
+        }
+
+        var accepted = 0;
+        foreach (var file in e.GetMultipleFiles(Settings.MaxFileCount))
+        {
+            if (accepted >= remaining)
+            {
+                _errorMessage = $"Maximal {Settings.MaxFileCount} Dateien erlaubt. Überschüssige Dateien wurden ignoriert.";
+                break;
+            }
+
+            if (!file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) &&
+                !file.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (file.Size > Settings.MaxFileSizeBytes)
+            {
+                _errorMessage = $"\"{file.Name}\" überschreitet die maximale Dateigröße von {FormatFileSize(Settings.MaxFileSizeBytes)}.";
+                continue;
+            }
+
+            _selectedFiles.Add(new UploadFileInfo
+            {
+                BrowserFile = file,
+                FileName = file.Name,
+                ContentType = file.ContentType,
+                FileSize = file.Size,
+                Status = "Pending"
+            });
+            accepted++;
+        }
+    }
+
+    private async Task UploadAllAsync()
+    {
+        _isUploading = true;
+        _errorMessage = null;
+        _uploadedCount = 0;
+
+        foreach (var file in _selectedFiles.Where(f => f.Status is "Pending" or "Error"))
+        {
+            file.Status = "Uploading";
+            StateHasChanged();
+
+            try
+            {
+                await using var stream = file.BrowserFile.OpenReadStream(Settings.MaxFileSizeBytes);
+                var title = Path.GetFileNameWithoutExtension(file.FileName);
+                await MediaApi.UploadMediaAsync(stream, file.FileName, file.ContentType, title);
+                file.Status = "Done";
+                _uploadedCount++;
+            }
+            catch (Exception ex)
+            {
+                file.Status = "Error";
+                file.ErrorMessage = ex.Message;
+            }
+
+            StateHasChanged();
+        }
+
+        _isUploading = false;
+    }
+
+    private void ClearQueue()
+    {
+        _selectedFiles.Clear();
+        _errorMessage = null;
+        _uploadedCount = 0;
+    }
+
+    private static string FormatFileSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
+    };
+
+    private sealed class UploadFileInfo
+    {
+        public required IBrowserFile BrowserFile { get; init; }
+        public required string FileName { get; init; }
+        public required string ContentType { get; init; }
+        public required long FileSize { get; init; }
+        public string Status { get; set; } = "Pending";
+        public string? ErrorMessage { get; set; }
+    }
+}
