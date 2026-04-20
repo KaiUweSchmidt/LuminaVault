@@ -5,7 +5,9 @@
     <Project Path="src/LuminaVault.AppHost/LuminaVault.AppHost.csproj" />
     <Project Path="src/LuminaVault.MediaImport/LuminaVault.MediaImport.csproj" />
     <Project Path="src/LuminaVault.MetadataStorage/LuminaVault.MetadataStorage.csproj" />
-    <Project Path="src/LuminaVault.ObjectRecognition/LuminaVault.ObjectRecognition.csproj" />
+    <Project Path="src/LuminaVault.ObjectRecognition/LuminaVault.ObjectRecognition.csproj">
+      <Build Solution="Debug|*" Project="false" />
+    </Project>
     <Project Path="src/LuminaVault.ServiceDefaults/LuminaVault.ServiceDefaults.csproj" />
     <Project Path="src/LuminaVault.ThumbnailGeneration/LuminaVault.ThumbnailGeneration.csproj" />
     <Project Path="src/LuminaVault.VectorSearch/LuminaVault.VectorSearch.csproj" />
