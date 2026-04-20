@@ -10,6 +10,8 @@ var app = builder.Build();
 
 app.MapDefaultEndpoints();
 
+app.Logger.LogInformation("[PIPELINE:MetaStore] ===== MetadataStorage Service gestartet — Pipeline-Logging aktiv =====");
+
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<MetadataDbContext>();
@@ -31,8 +33,10 @@ app.MapGet("/media/{id:guid}", async (Guid id, MetadataDbContext db) =>
         ? Results.Ok(metadata)
         : Results.NotFound());
 
-app.MapPost("/media", async (CreateMediaMetadataRequest request, MetadataDbContext db) =>
+app.MapPost("/media", async (CreateMediaMetadataRequest request, MetadataDbContext db, ILogger<Program> logger) =>
 {
+    logger.LogInformation("[PIPELINE:MetaStore] POST /media - Metadata anlegen für MediaId={MediaId}, Title={Title}",
+        request.MediaId, request.Title);
     var metadata = new MediaMetadata
     {
         Id = request.MediaId,
@@ -45,13 +49,20 @@ app.MapPost("/media", async (CreateMediaMetadataRequest request, MetadataDbConte
     };
     await db.MediaMetadata.AddAsync(metadata);
     await db.SaveChangesAsync();
+    logger.LogInformation("[PIPELINE:MetaStore] POST /media - Metadata gespeichert für MediaId={MediaId}", request.MediaId);
     return Results.Created($"/media/{metadata.Id}", metadata);
 });
 
-app.MapPut("/media/{id:guid}", async (Guid id, UpdateMediaMetadataRequest request, MetadataDbContext db) =>
+app.MapPut("/media/{id:guid}", async (Guid id, UpdateMediaMetadataRequest request, MetadataDbContext db, ILogger<Program> logger) =>
 {
+    logger.LogInformation("[PIPELINE:MetaStore] PUT /media/{MediaId} - Update angefordert (PersonCount={PersonCount}, Title={Title})",
+        id, request.PersonCount, request.Title);
     var metadata = await db.MediaMetadata.FindAsync(id);
-    if (metadata is null) return Results.NotFound();
+    if (metadata is null)
+    {
+        logger.LogWarning("[PIPELINE:MetaStore] PUT /media/{MediaId} - Metadata NICHT GEFUNDEN", id);
+        return Results.NotFound();
+    }
 
     metadata.Title = request.Title ?? metadata.Title;
     metadata.Description = request.Description ?? metadata.Description;
@@ -61,6 +72,8 @@ app.MapPut("/media/{id:guid}", async (Guid id, UpdateMediaMetadataRequest reques
     metadata.UpdatedAt = DateTimeOffset.UtcNow;
 
     await db.SaveChangesAsync();
+    logger.LogInformation("[PIPELINE:MetaStore] PUT /media/{MediaId} - Update gespeichert (PersonCount={PersonCount})",
+        id, metadata.PersonCount);
     return Results.Ok(metadata);
 });
 
@@ -83,18 +96,22 @@ app.MapGet("/faces/{mediaId:guid}", async (Guid mediaId, MetadataDbContext db) =
     return Results.Ok(faces);
 });
 
-app.MapPost("/faces", async (CreateFaceRequest request, MetadataDbContext db) =>
+app.MapPost("/faces", async (CreateFaceRequest request, MetadataDbContext db, ILogger<Program> logger) =>
 {
+    logger.LogInformation("[PIPELINE:MetaStore] POST /faces - Gesicht speichern für MediaId={MediaId}, Beschreibung={DescLen} Zeichen",
+        request.MediaId, request.FaceDescription?.Length ?? 0);
     var face = new Face
     {
         Id = Guid.NewGuid(),
         MediaId = request.MediaId,
-        FaceDescription = request.FaceDescription,
+        FaceDescription = request.FaceDescription ?? string.Empty,
         Name = request.Name,
         DetectedAt = DateTimeOffset.UtcNow
     };
     await db.Faces.AddAsync(face);
     await db.SaveChangesAsync();
+    logger.LogInformation("[PIPELINE:MetaStore] POST /faces - Gesicht gespeichert: FaceId={FaceId} für MediaId={MediaId}",
+        face.Id, request.MediaId);
     return Results.Created($"/faces/{face.MediaId}/{face.Id}", face);
 });
 

@@ -17,7 +17,7 @@ var minio = builder.AddMinioContainer("minio")
 // Ollama for AI/LLM inference
 var ollama = builder.AddOllama("ollama")
     .WithLifetime(ContainerLifetime.Persistent)
-    .AddModel("llava");
+    .AddModel("llava:13b");
 
 // Backend services
 var metadataStorage = builder.AddProject<Projects.LuminaVault_MetadataStorage>("metadata-storage")

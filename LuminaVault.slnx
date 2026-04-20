@@ -1,7 +1,5 @@
 <Solution>
-  <Folder Name="/Projektmappenelemente/">
-    <File Path="README.md" />
-  </Folder>
+  <Folder Name="/Projektmappenelemente/" />
   <Folder Name="/src/">
     <Project Path="src/LuminaVault.AiTagging/LuminaVault.AiTagging.csproj" />
     <Project Path="src/LuminaVault.ApiGateway/LuminaVault.ApiGateway.csproj" />
@@ -16,4 +14,5 @@
     <Project Path="src/LuminaVault.VectorSearch/LuminaVault.VectorSearch.csproj" />
     <Project Path="src/LuminaVault.WebUI/LuminaVault.WebUI.csproj" />
   </Folder>
+  <Project Path="tests/LuminaVault.Pipeline.Tests/LuminaVault.Pipeline.Tests.csproj" />
 </Solution>

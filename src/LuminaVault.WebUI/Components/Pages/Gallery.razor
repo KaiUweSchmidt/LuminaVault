@@ -39,7 +39,7 @@
                     <tbody>
                         @foreach (var item in _mediaItems)
                         {
-                            <tr class="@(item.Id == _selectedId ? "selected" : "")" @onclick="() => SelectItemAsync(item)">
+                            <tr class="@(item.Id == _selectedId ? "selected" : "")" @onclick="() => SelectItemAsync(item)" @oncontextmenu="(e) => ShowContextMenu(e, item)" @oncontextmenu:preventDefault="true">
                                 <td class="col-thumb">
                                     @if (_thumbnails.TryGetValue(item.Id, out var url) && url is not null)
                                     {
@@ -100,7 +100,143 @@
             </div>
         </div>
     }
+
+    @if (_contextMenuVisible)
+    {
+        <div class="context-menu" style="left:@(_contextMenuX)px; top:@(_contextMenuY)px;" @onmouseleave="HideContextMenu">
+            <div class="context-menu-item" @onclick="FindSimilarPersons">🔍 Ähnliche Person suchen</div>
+            <div class="context-menu-item" @onclick="ShowFaces">👤 Gesichter anzeigen</div>
+        </div>
+    }
+
+    @if (_similarPersonsVisible && _similarPersons.Count > 0)
+    {
+        <div class="similar-persons-panel">
+            <div class="similar-persons-header">
+                <h3>Ähnliche Personen gefunden</h3>
+                <button @onclick="CloseSimilarPersons">✕</button>
+            </div>
+            <div class="similar-persons-list">
+                @foreach (var item in _similarPersons)
+                {
+                    <div class="similar-person-item">
+                        <strong>@item.Title</strong>
+                        <span class="person-badge">👤 @item.PersonCount</span>
+                        <span class="tags">@string.Join(", ", item.Tags)</span>
+                        <small>@item.CreatedAt.ToString("dd.MM.yyyy HH:mm")</small>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_similarPersonsVisible && _similarPersons.Count == 0 && !_isSearching)
+    {
+        <div class="similar-persons-panel">
+            <div class="similar-persons-header">
+                <h3>Ähnliche Personen</h3>
+                <button @onclick="CloseSimilarPersons">✕</button>
+            </div>
+            <p>Keine weiteren Medien mit erkannten Personen gefunden.</p>
+        </div>
+    }
+
+    @if (_facesVisible && _faces.Count > 0)
+    {
+        <div class="similar-persons-panel">
+            <div class="similar-persons-header">
+                <h3>Erkannte Gesichter in "@_contextMenuItem?.FileName"</h3>
+                <button @onclick="CloseFaces">✕</button>
+            </div>
+            <div class="faces-list">
+                @foreach (var face in _faces)
+                {
+                    <div class="face-item">
+                        <div class="face-description">@face.FaceDescription</div>
+                        @if (!string.IsNullOrWhiteSpace(face.Name))
+                        {
+                            <div class="face-name"><strong>Name:</strong> @face.Name</div>
+                        }
+                        <div class="face-edit">
+                            <input @bind="_faceNameInputs[face.Id]" placeholder="Name vergeben..." />
+                            <button @onclick="() => SaveFaceNameAsync(face.Id)">Speichern</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_facesVisible && _faces.Count == 0 && !_isSearching)
+    {
+        <div class="similar-persons-panel">
+            <div class="similar-persons-header">
+                <h3>Gesichter</h3>
+                <button @onclick="CloseFaces">✕</button>
+            </div>
+            <p>Keine Gesichter für dieses Medium gefunden.</p>
+        </div>
+    }
 </div>
+
+<style>
+    .context-menu {
+        position: fixed;
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        box-shadow: 2px 2px 8px rgba(0,0,0,0.2);
+        z-index: 1000;
+        min-width: 220px;
+    }
+    .context-menu-item {
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+    }
+    .context-menu-item:hover { background: #f0f0f0; }
+    .similar-persons-panel {
+        margin-top: 1rem;
+        border: 1px solid #4a90d9;
+        border-radius: 4px;
+        padding: 1rem;
+        background: #f8fbff;
+    }
+    .similar-persons-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+    .similar-persons-header h3 { margin: 0; }
+    .similar-person-item {
+        border-bottom: 1px solid #ddd;
+        padding: 0.5rem 0;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .person-badge {
+        display: inline-block;
+        background: #4a90d9;
+        color: white;
+        border-radius: 12px;
+        padding: 2px 8px;
+        font-size: 0.8em;
+    }
+    .tags { color: #666; font-size: 0.85em; }
+    .faces-list { display: flex; flex-direction: column; gap: 1rem; }
+    .face-item {
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 0.75rem;
+        background: white;
+    }
+    .face-description { font-size: 0.9em; color: #333; margin-bottom: 0.5rem; }
+    .face-name { font-size: 0.85em; margin-bottom: 0.5rem; }
+    .face-edit { display: flex; gap: 0.5rem; }
+    .face-edit input { flex: 1; padding: 0.25rem 0.5rem; }
+</style>
 
 @code {
     private List<ImportedMediaItem> _mediaItems = [];
@@ -152,6 +288,99 @@
 
         _previewUrl = await MediaApi.GetOriginalUrlAsync(item.Id);
         _isLoadingPreview = false;
+    }
+
+    private bool _contextMenuVisible;
+    private double _contextMenuX;
+    private double _contextMenuY;
+    private ImportedMediaItem? _contextMenuItem;
+
+    private bool _isSearching;
+    private bool _similarPersonsVisible;
+    private List<MediaItem> _similarPersons = [];
+
+    private bool _facesVisible;
+    private List<Face> _faces = [];
+    private Dictionary<Guid, string?> _faceNameInputs = [];
+
+    private void ShowContextMenu(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, ImportedMediaItem item)
+    {
+        _contextMenuX = e.ClientX;
+        _contextMenuY = e.ClientY;
+        _contextMenuItem = item;
+        _contextMenuVisible = true;
+        _similarPersonsVisible = false;
+        _facesVisible = false;
+    }
+
+    private void HideContextMenu() => _contextMenuVisible = false;
+
+    private async Task FindSimilarPersons()
+    {
+        _contextMenuVisible = false;
+        if (_contextMenuItem is null) return;
+        _isSearching = true;
+        _similarPersonsVisible = true;
+        _facesVisible = false;
+        try
+        {
+            _similarPersons = await MediaApi.FindSimilarPersonsAsync(_contextMenuItem.Id);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+            _similarPersons = [];
+        }
+        finally { _isSearching = false; }
+    }
+
+    private async Task ShowFaces()
+    {
+        _contextMenuVisible = false;
+        if (_contextMenuItem is null) return;
+        _isSearching = true;
+        _facesVisible = true;
+        _similarPersonsVisible = false;
+        try
+        {
+            _faces = await MediaApi.GetFacesAsync(_contextMenuItem.Id);
+            _faceNameInputs = _faces.ToDictionary(f => f.Id, f => f.Name);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+            _faces = [];
+        }
+        finally { _isSearching = false; }
+    }
+
+    private async Task SaveFaceNameAsync(Guid faceId)
+    {
+        if (!_faceNameInputs.TryGetValue(faceId, out var name)) return;
+        try
+        {
+            await MediaApi.UpdateFaceNameAsync(faceId, name);
+            var face = _faces.FirstOrDefault(f => f.Id == faceId);
+            if (face is not null)
+            {
+                var idx = _faces.IndexOf(face);
+                _faces[idx] = face with { Name = name };
+            }
+        }
+        catch (Exception ex) { _errorMessage = ex.Message; }
+    }
+
+    private void CloseSimilarPersons()
+    {
+        _similarPersonsVisible = false;
+        _similarPersons = [];
+    }
+
+    private void CloseFaces()
+    {
+        _facesVisible = false;
+        _faces = [];
+        _faceNameInputs = [];
     }
 
     private static string FormatFileSize(long bytes) => bytes switch
