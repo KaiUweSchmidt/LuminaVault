@@ -59,3 +59,22 @@ public record CreateFaceRequest(
     double BboxHeight = 0);
 
 public record UpdateFaceNameRequest(string? Name);
+
+public class Collection
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+    public List<CollectionMediaItem> MediaItems { get; set; } = [];
+}
+
+public class CollectionMediaItem
+{
+    public Guid CollectionId { get; set; }
+    public Collection Collection { get; set; } = null!;
+    public Guid MediaId { get; set; }
+}
+
+public record CreateCollectionRequest(string Name, string Description);
+public record UpdateCollectionRequest(string? Name, string? Description);

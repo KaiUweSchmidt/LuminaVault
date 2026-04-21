@@ -167,6 +167,23 @@
         <div class="context-menu" style="left:@(_contextMenuX)px; top:@(_contextMenuY)px;" @onmouseleave="HideContextMenu">
             <div class="context-menu-item" @onclick="FindSimilarPersons">🔍 Ähnliche Person suchen</div>
             <div class="context-menu-item" @onclick="ShowFaces">👤 Gesichter anzeigen</div>
+            <div class="context-menu-item context-menu-item-submenu">
+                <span>🗂️ Zur Sammlung zuordnen ▶</span>
+                <div class="context-submenu">
+                    @if (_collections.Count == 0)
+                    {
+                        <div class="context-menu-item context-menu-item-disabled">Keine Sammlungen vorhanden</div>
+                    }
+                    else
+                    {
+                        @foreach (var collection in CollectionsForSubmenu)
+                        {
+                            var col = collection;
+                            <div class="context-menu-item" @onclick="() => AssignToCollectionAsync(col)">🗂️ @col.Name</div>
+                        }
+                    }
+                </div>
+            </div>
         </div>
     }
 
@@ -269,8 +286,25 @@
         cursor: pointer;
         color: #f0f0f0;
         font-weight: 500;
+        position: relative;
     }
     .context-menu-item:hover { background: #4a90d9; color: #fff; }
+    .context-menu-item-disabled { opacity: 0.5; cursor: default; }
+    .context-menu-item-disabled:hover { background: transparent; }
+    .context-menu-item-submenu { position: relative; }
+    .context-submenu {
+        display: none;
+        position: absolute;
+        left: 100%;
+        top: 0;
+        background: #1a1a2e;
+        border: 1px solid #4a90d9;
+        border-radius: 4px;
+        box-shadow: 2px 4px 12px rgba(0,0,0,0.4);
+        min-width: 200px;
+        z-index: 1001;
+    }
+    .context-menu-item-submenu:hover .context-submenu { display: block; }
     .similar-persons-panel {
         margin-top: 1rem;
         border: 1px solid #4a90d9;
@@ -494,6 +528,8 @@
             {
                 _thumbnails[item.Id] = $"/proxy/thumbnail/{item.Id}";
             }
+
+            _collections = await MediaApi.GetCollectionsAsync();
         }
         catch (Exception ex)
         {
@@ -557,6 +593,40 @@
     private string? _annotatedPreviewUrl;
     private byte[]? _cachedImageBytes;
     private List<string> _allFaceNames = [];
+
+    // Collections
+    private List<CollectionDto> _collections = [];
+    private Guid? _lastUsedCollectionId;
+
+    private IEnumerable<CollectionDto> CollectionsForSubmenu
+    {
+        get
+        {
+            if (_lastUsedCollectionId.HasValue)
+            {
+                var last = _collections.FirstOrDefault(c => c.Id == _lastUsedCollectionId.Value);
+                if (last is not null)
+                    return [last, .. _collections.Where(c => c.Id != _lastUsedCollectionId.Value).OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)];
+            }
+            return _collections.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private async Task AssignToCollectionAsync(CollectionDto collection)
+    {
+        _contextMenuVisible = false;
+        if (_contextMenuItem is null) return;
+        try
+        {
+            await MediaApi.AddMediaToCollectionAsync(collection.Id, _contextMenuItem.Id);
+            _lastUsedCollectionId = collection.Id;
+            _errorMessage = null;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Fehler beim Zuordnen zur Sammlung: {ex.Message}";
+        }
+    }
 
     private void ShowContextMenu(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, MediaItem item)
     {

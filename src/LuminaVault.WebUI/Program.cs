@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using LuminaVault.WebUI.Components;
 using LuminaVault.WebUI.Services;
 using LuminaVault.WebUI.Settings;
@@ -65,6 +66,40 @@ app.MapGet("/proxy/media/{mediaId:guid}", async (Guid mediaId, MediaApiClient me
     return result.HasValue
         ? Results.File(result.Value.Data, result.Value.ContentType)
         : Results.NotFound();
+});
+
+app.MapGet("/proxy/collections/{collectionId:guid}/download", async (Guid collectionId, MediaApiClient mediaApi) =>
+{
+    var mediaIds = await mediaApi.GetCollectionMediaIdsAsync(collectionId);
+    if (mediaIds.Count == 0)
+        return Results.NotFound();
+
+    var zipStream = new MemoryStream();
+    using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
+    {
+        foreach (var mediaId in mediaIds)
+        {
+            var result = await mediaApi.GetOriginalBytesAsync(mediaId);
+            if (result is null) continue;
+
+            var ext = result.Value.ContentType switch
+            {
+                "image/jpeg" => ".jpg",
+                "image/png" => ".png",
+                "image/gif" => ".gif",
+                "image/webp" => ".webp",
+                "video/mp4" => ".mp4",
+                "video/quicktime" => ".mov",
+                _ => ".bin"
+            };
+            var entry = archive.CreateEntry($"{mediaId}{ext}", CompressionLevel.Optimal);
+            using var entryStream = entry.Open();
+            await entryStream.WriteAsync(result.Value.Data);
+        }
+    }
+
+    zipStream.Position = 0;
+    return Results.File(zipStream, "application/zip", $"sammlung-{collectionId}.zip");
 });
 
 app.MapDefaultEndpoints();
