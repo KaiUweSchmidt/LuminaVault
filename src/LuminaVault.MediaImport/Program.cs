@@ -1,12 +1,15 @@
 using LuminaVault.MediaImport;
+using LuminaVault.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Minio;
 using Minio.DataModel.Args;
+using NATS.Client.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddNatsClient();
 
 builder.Services.AddDbContext<MediaImportDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("luminavault-metadata")));
@@ -53,7 +56,7 @@ using (var scope = app.Services.CreateScope())
 app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     MediaImportDbContext db, ThumbnailServiceClient thumbnails,
     ObjectRecognitionServiceClient recognition, MetadataStorageClient metadataStorage,
-    IGeocodingService geocoding, ILogger<Program> logger) =>
+    IGeocodingService geocoding, INatsConnection nats, ILogger<Program> logger) =>
 {
     logger.LogInformation("[PIPELINE] ===== Import gestartet =====");
 
@@ -210,6 +213,26 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     else
     {
         logger.LogInformation("[PIPELINE] Schritt 5/5: ObjectRecognition übersprungen (kein Bild)");
+    }
+
+    // Publish media.imported event via NATS so that subscribers (thumbnail-generation,
+    // object-recognition) can react asynchronously.
+    try
+    {
+        var importedEvent = new MediaImportedEvent(
+            mediaId,
+            file.FileName,
+            file.ContentType,
+            file.Length,
+            bucket,
+            storageKey);
+        await nats.PublishAsync(NatsSubjects.MediaImported, importedEvent);
+        logger.LogInformation("[PIPELINE] NATS-Event '{Subject}' veröffentlicht für MediaId={MediaId}",
+            NatsSubjects.MediaImported, mediaId);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "[PIPELINE] NATS-Publish FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
     }
 
     logger.LogInformation("[PIPELINE] ===== Import abgeschlossen: MediaId={MediaId}, Datei={FileName} =====", mediaId, file.FileName);

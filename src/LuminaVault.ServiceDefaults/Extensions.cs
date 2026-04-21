@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+using NATS.Client.Core;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -91,6 +92,22 @@ public static class Extensions
         builder.Services.AddHealthChecks()
             // Add a default liveness check to ensure app is responsive
             .AddCheck("self", () => HealthCheckResult.Healthy(), ["live"]);
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers a <see cref="INatsConnection"/> singleton configured from the <c>Nats:Url</c>
+    /// configuration key (falls back to <c>nats://localhost:4222</c>).
+    /// </summary>
+    public static TBuilder AddNatsClient<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
+    {
+        builder.Services.AddSingleton<INatsConnection>(sp =>
+        {
+            var url = builder.Configuration["Nats:Url"] ?? "nats://localhost:4222";
+            var opts = NatsOpts.Default with { Url = url };
+            return new NatsConnection(opts);
+        });
 
         return builder;
     }

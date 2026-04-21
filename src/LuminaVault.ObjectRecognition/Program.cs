@@ -5,6 +5,7 @@ using Minio.DataModel.Args;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddNatsClient();
 
 builder.Services.AddSingleton<IMinioClient>(sp =>
 {
@@ -29,6 +30,8 @@ builder.Services.AddHttpClient<FaceRecognitionClient>(client =>
 builder.Services.AddHttpClient<MetadataStorageClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:MetadataStorage"]
         ?? "http://metadata-storage:8080"));
+
+builder.Services.AddHostedService<NatsObjectRecognitionSubscriber>();
 
 var app = builder.Build();
 

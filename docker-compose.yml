@@ -1,4 +1,14 @@
 services:
+  nats:
+    image: nats:2-alpine
+    ports:
+      - "4222:4222"
+    healthcheck:
+      test: ["CMD", "nats-server", "--help"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   postgres:
     image: pgvector/pgvector:pg17
     environment:
@@ -69,8 +79,11 @@ services:
       Minio__Endpoint: minio:9000
       Minio__AccessKey: minioadmin
       Minio__SecretKey: minioadmin
+      Nats__Url: nats://nats:4222
     depends_on:
       minio:
+        condition: service_healthy
+      nats:
         condition: service_healthy
 
   object-recognition:
@@ -85,6 +98,7 @@ services:
       Services__Ollama: http://ollama:11434
       Services__FaceRecognition: http://face-recognition:8080
       Services__MetadataStorage: http://metadata-storage:8080
+      Nats__Url: nats://nats:4222
     depends_on:
       minio:
         condition: service_healthy
@@ -94,6 +108,8 @@ services:
         condition: service_started
       metadata-storage:
         condition: service_started
+      nats:
+        condition: service_healthy
 
   face-recognition:
     build:
@@ -127,6 +143,7 @@ services:
       Services__ThumbnailGeneration: http://thumbnail-generation:8080
       Services__ObjectRecognition: http://object-recognition:8080
       Services__MetadataStorage: http://metadata-storage:8080
+      Nats__Url: nats://nats:4222
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,6 +151,8 @@ services:
         condition: service_healthy
       metadata-storage:
         condition: service_started
+      nats:
+        condition: service_healthy
 
   api-gateway:
     build:
