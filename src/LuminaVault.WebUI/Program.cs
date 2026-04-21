@@ -1,6 +1,7 @@
 using LuminaVault.WebUI.Components;
 using LuminaVault.WebUI.Services;
 using LuminaVault.WebUI.Settings;
+using Microsoft.AspNetCore.Components.Server.Circuits;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +14,11 @@ builder.Services.AddRazorComponents()
 builder.Services.Configure<ImportSettings>(builder.Configuration.GetSection(ImportSettings.SectionName));
 
 builder.Services.AddScoped<GalleryUserSettingsService>();
+
+// Batch import: singleton state + scoped circuit handler for pause-on-disconnect
+builder.Services.AddSingleton<BatchImportService>();
+builder.Services.AddScoped<BatchImportCircuitHandler>();
+builder.Services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<BatchImportCircuitHandler>());
 
 builder.Services.AddHttpClient<MediaApiClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:ApiGateway"]

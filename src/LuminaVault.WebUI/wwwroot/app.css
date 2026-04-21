@@ -688,6 +688,166 @@ html, body {
     animation: spin 1s linear infinite;
 }
 
+/* ===== Batch Import Page ===== */
+.batch-import-page {
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.batch-import-page h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.batch-dir-form {
+    margin-top: 2rem;
+}
+
+.batch-dir-label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--color-text);
+}
+
+.batch-dir-row {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.batch-dir-input {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    color: var(--color-text);
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.batch-dir-input:focus {
+    border-color: var(--color-accent);
+}
+
+.batch-dir-input:disabled {
+    opacity: 0.5;
+}
+
+.batch-status-card {
+    margin-top: 2rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+}
+
+.batch-status-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.batch-status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.batch-status-badge.status-running   { background: rgba(108, 99, 255, 0.2); color: #9c94ff; }
+.batch-status-badge.status-scanning  { background: rgba(255, 193, 7, 0.2);  color: #ffc107; }
+.batch-status-badge.status-paused    { background: rgba(255, 165, 0, 0.2);  color: #ffa500; }
+.batch-status-badge.status-completed { background: rgba(38, 176, 80, 0.2);  color: #26b050; }
+.batch-status-badge.status-cancelled { background: rgba(229, 85, 85, 0.2);  color: #e55; }
+
+.batch-dir-display {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    word-break: break-all;
+}
+
+.batch-scanning {
+    padding: 1.5rem 0;
+    text-align: center;
+    color: var(--color-text-muted);
+}
+
+.batch-progress-section {
+    margin-bottom: 1.25rem;
+}
+
+.batch-progress-bar-wrap {
+    height: 10px;
+    background: var(--color-border);
+    border-radius: 999px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.batch-progress-bar {
+    height: 100%;
+    background: var(--color-accent);
+    border-radius: 999px;
+    transition: width 0.4s ease;
+    min-width: 0;
+}
+
+.batch-progress-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+}
+
+.batch-stats {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.batch-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.batch-stat-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-muted);
+}
+
+.batch-stat-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.batch-current-file {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    margin-bottom: 1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.batch-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
 /* ===== Existing Blazor styles ===== */
 h1:focus {
     outline: none;

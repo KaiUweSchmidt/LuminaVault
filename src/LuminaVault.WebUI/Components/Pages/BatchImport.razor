@@ -1,0 +1,214 @@
+@page "/batch-import"
+@using LuminaVault.WebUI.Services
+@inject BatchImportService ImportService
+@inject BatchImportCircuitHandler CircuitHandler
+@rendermode InteractiveServer
+@implements IDisposable
+
+<div class="batch-import-page">
+    <h1>📂 Verzeichnis importieren</h1>
+    <p class="import-description">
+        Wähle ein Basisverzeichnis auf dem Server. Alle gültigen Mediendateien werden rekursiv gefunden und importiert.
+    </p>
+
+    @if (ImportService.Status == BatchImportStatus.Idle || ImportService.Status == BatchImportStatus.Cancelled)
+    {
+        <div class="batch-dir-form">
+            <label class="batch-dir-label" for="dirInput">Verzeichnispfad</label>
+            <div class="batch-dir-row">
+                <input id="dirInput"
+                       class="batch-dir-input"
+                       type="text"
+                       placeholder="/media/fotos"
+                       @bind="_directoryPath"
+                       @bind:event="oninput"
+                       disabled="@_isStarting" />
+                <button class="btn-upload"
+                        @onclick="StartImportAsync"
+                        disabled="@(string.IsNullOrWhiteSpace(_directoryPath) || _isStarting)">
+                    @(_isStarting ? "Wird gescannt..." : "Import starten")
+                </button>
+            </div>
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <div class="error-message" style="margin-top:0.75rem">@_errorMessage</div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="batch-status-card">
+            <div class="batch-status-header">
+                <span class="batch-status-badge @StatusCssClass">@StatusLabel</span>
+                <span class="batch-dir-display">@ImportService.DirectoryPath</span>
+            </div>
+
+            @if (ImportService.Status == BatchImportStatus.Scanning)
+            {
+                <div class="batch-scanning">Verzeichnis wird durchsucht...</div>
+            }
+            else
+            {
+                <div class="batch-progress-section">
+                    <div class="batch-progress-bar-wrap">
+                        <div class="batch-progress-bar" style="width: @ImportService.ProgressPercent.ToString("F1")%"></div>
+                    </div>
+                    <div class="batch-progress-labels">
+                        <span>@ImportService.ImportedCount erfolgreich &nbsp; @ImportService.ErrorCount Fehler &nbsp; von @ImportService.TotalFiles</span>
+                        <span>@ImportService.ProgressPercent.ToString("F1")%</span>
+                    </div>
+                </div>
+
+                <div class="batch-stats">
+                    <div class="batch-stat">
+                        <span class="batch-stat-label">Durchschn. Importzeit</span>
+                        <span class="batch-stat-value">
+                            @if (ImportService.AverageImportTime is { } avg)
+                            {
+                                @FormatDuration(avg)
+                            }
+                            else
+                            {
+                                <span>-</span>
+                            }
+                        </span>
+                    </div>
+                    <div class="batch-stat">
+                        <span class="batch-stat-label">ETA</span>
+                        <span class="batch-stat-value">
+                            @if (ImportService.EstimatedTimeRemaining is { } eta)
+                            {
+                                @FormatDuration(eta)
+                            }
+                            else
+                            {
+                                <span>-</span>
+                            }
+                        </span>
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(ImportService.CurrentFile))
+                {
+                    <div class="batch-current-file">
+                        <span class="spinner">&#x23F3;</span>&nbsp;@ImportService.CurrentFile
+                    </div>
+                }
+
+                <div class="batch-actions">
+                    @if (ImportService.Status == BatchImportStatus.Running)
+                    {
+                        <button class="btn-clear" @onclick="ImportService.Pause">Pausieren</button>
+                    }
+                    else if (ImportService.Status == BatchImportStatus.Paused)
+                    {
+                        <button class="btn-upload" @onclick="ResumeAsync">Weiterführen</button>
+                    }
+
+                    @if (ImportService.Status != BatchImportStatus.Completed)
+                    {
+                        <button class="btn-danger" @onclick="ImportService.Cancel"
+                                disabled="@(ImportService.Status == BatchImportStatus.Scanning)">
+                            Abbrechen
+                        </button>
+                    }
+
+                    @if (ImportService.Status is BatchImportStatus.Completed or BatchImportStatus.Cancelled)
+                    {
+                        <button class="btn-clear" @onclick="ImportService.Reset">Neuer Import</button>
+                    }
+                </div>
+
+                @if (ImportService.Status == BatchImportStatus.Completed)
+                {
+                    <div class="upload-success">
+                        Import abgeschlossen - @ImportService.ImportedCount Datei(en) importiert, @ImportService.ErrorCount Fehler.
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private string? _directoryPath;
+    private string? _errorMessage;
+    private bool _isStarting;
+
+    protected override void OnInitialized()
+    {
+        ImportService.OnProgressChanged += HandleProgress;
+
+        // Register this circuit as the import owner so the circuit handler
+        // can pause the import if this tab/window is closed.
+        if (CircuitHandler.CircuitId is { } id)
+            ImportService.SetOwner(id);
+    }
+
+    public void Dispose()
+    {
+        ImportService.OnProgressChanged -= HandleProgress;
+    }
+
+    private void HandleProgress()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartImportAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_directoryPath)) return;
+        _errorMessage = null;
+        _isStarting = true;
+        StateHasChanged();
+
+        try
+        {
+            await ImportService.StartAsync(_directoryPath.Trim());
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+            ImportService.Reset();
+        }
+        finally
+        {
+            _isStarting = false;
+        }
+    }
+
+    private async Task ResumeAsync()
+    {
+        // Re-register ownership so the new circuit can pause on browser close.
+        if (CircuitHandler.CircuitId is { } id)
+            ImportService.SetOwner(id);
+
+        await ImportService.ResumeAsync();
+    }
+
+    private string StatusLabel => ImportService.Status switch
+    {
+        BatchImportStatus.Scanning   => "Scannen...",
+        BatchImportStatus.Running    => "Importiert...",
+        BatchImportStatus.Paused     => "Pausiert",
+        BatchImportStatus.Completed  => "Abgeschlossen",
+        BatchImportStatus.Cancelled  => "Abgebrochen",
+        _                            => ""
+    };
+
+    private string StatusCssClass => ImportService.Status switch
+    {
+        BatchImportStatus.Running    => "status-running",
+        BatchImportStatus.Paused     => "status-paused",
+        BatchImportStatus.Completed  => "status-completed",
+        BatchImportStatus.Cancelled  => "status-cancelled",
+        _                            => "status-scanning"
+    };
+
+    private static string FormatDuration(TimeSpan ts)
+    {
+        if (ts.TotalSeconds < 60) return $"{ts.TotalSeconds:F1} s";
+        if (ts.TotalMinutes < 60) return $"{(int)ts.TotalMinutes} min {ts.Seconds} s";
+        return $"{(int)ts.TotalHours} h {ts.Minutes} min";
+    }
+}
