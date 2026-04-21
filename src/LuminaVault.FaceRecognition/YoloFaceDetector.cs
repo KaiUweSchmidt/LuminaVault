@@ -4,7 +4,7 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
-namespace LuminaVault.ObjectRecognition;
+namespace LuminaVault.FaceRecognition;
 
 /// <summary>
 /// Detects faces using a YOLOv8-face ONNX model. Returns bounding boxes as percentages (0-100) of original image dimensions.

@@ -22,119 +22,101 @@ builder.Services.AddHttpClient<OllamaClient>((sp, client) =>
     client.BaseAddress = new Uri(ollamaUrl);
 });
 
-builder.Services.AddHttpClient<MetadataStorageClient>(client =>
-    client.BaseAddress = new Uri(builder.Configuration["Services:MetadataStorage"]
-        ?? "http://metadata-storage:8080"));
+builder.Services.AddHttpClient<FaceRecognitionClient>(client =>
+    client.BaseAddress = new Uri(builder.Configuration["Services:FaceRecognition"]
+        ?? "http://face-recognition:8080"));
 
-builder.Services.AddSingleton<YoloFaceDetector>(sp =>
-{
-    var modelPath = builder.Configuration["Yolo:ModelPath"] ?? "/app/models/yolov12m-face.onnx";
-    var logger = sp.GetRequiredService<ILogger<YoloFaceDetector>>();
-    return new YoloFaceDetector(modelPath, logger);
-});
+builder.Services.AddHttpClient<AiTaggingClient>(client =>
+    client.BaseAddress = new Uri(builder.Configuration["Services:AiTagging"]
+        ?? "http://ai-tagging:8080"));
 
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
 
-app.Logger.LogInformation("[PIPELINE:ObjRec] ===== ObjectRecognition Service gestartet — YOLO-Face + Ollama =====");
+app.Logger.LogInformation("[PIPELINE:ObjRec] ===== ObjectRecognition Service gestartet — Ollama Objekterkennung =====");
 
 app.MapPost("/recognize", async (
     RecognizeRequest request,
     IMinioClient minio,
-    YoloFaceDetector yolo,
     OllamaClient ollama,
-    MetadataStorageClient metadataStorage,
+    FaceRecognitionClient faceRecognition,
+    AiTaggingClient aiTagging,
     ILogger<Program> logger) =>
 {
-    logger.LogInformation("[PIPELINE:ObjRec] ===== Recognition gestartet für MediaId={MediaId} =====", request.MediaId);
+    logger.LogInformation("[PIPELINE:ObjRec] ===== Objekterkennung gestartet für MediaId={MediaId} =====", request.MediaId);
     logger.LogInformation("[PIPELINE:ObjRec] ContentType={ContentType}, Bucket={Bucket}, Key={Key}",
         request.ContentType, request.StorageBucket, request.StorageKey);
 
     if (!request.ContentType.StartsWith("image/"))
     {
         logger.LogInformation("[PIPELINE:ObjRec] Übersprungen: Kein Bildformat ({ContentType})", request.ContentType);
-        return Results.Ok(new RecognizeResponse(request.MediaId, 0, []));
+        return Results.Ok(new RecognizeResponse(request.MediaId, false, []));
     }
 
-    byte[] imageBytes;
     string base64Image;
     try
     {
-        logger.LogInformation("[PIPELINE:ObjRec] Schritt 1/4: Bild aus MinIO herunterladen...");
+        logger.LogInformation("[PIPELINE:ObjRec] Schritt 1/3: Bild aus MinIO herunterladen...");
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var imageStream = new MemoryStream();
         await minio.GetObjectAsync(new GetObjectArgs()
             .WithBucket(request.StorageBucket)
             .WithObject(request.StorageKey)
             .WithCallbackStream(stream => stream.CopyTo(imageStream)));
-        imageBytes = imageStream.ToArray();
+        var imageBytes = imageStream.ToArray();
         base64Image = Convert.ToBase64String(imageBytes);
         sw.Stop();
-        logger.LogInformation("[PIPELINE:ObjRec] Schritt 1/4: Bild heruntergeladen ({SizeKb}KB) in {ElapsedMs}ms",
+        logger.LogInformation("[PIPELINE:ObjRec] Schritt 1/3: Bild heruntergeladen ({SizeKb}KB) in {ElapsedMs}ms",
             imageBytes.Length / 1024, sw.ElapsedMilliseconds);
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "[PIPELINE:ObjRec] Schritt 1/4: FEHLER beim Download von {StorageKey}", request.StorageKey);
-        return Results.Problem("Failed to download image for recognition");
+        logger.LogError(ex, "[PIPELINE:ObjRec] Schritt 1/3: FEHLER beim Download von {StorageKey}", request.StorageKey);
+        return Results.Problem("Failed to download image for object recognition");
     }
 
-    logger.LogInformation("[PIPELINE:ObjRec] Schritt 2/4: YOLO-Face Erkennung...");
-    List<DetectedFace> detectedFaces;
+    logger.LogInformation("[PIPELINE:ObjRec] Schritt 2/3: Ollama Objekterkennung...");
+    OllamaDetectionResult detection;
     try
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        detectedFaces = yolo.DetectFaces(imageBytes);
+        detection = await ollama.DetectObjectsAsync(base64Image);
         sw.Stop();
-        logger.LogInformation("[PIPELINE:ObjRec] Schritt 2/4: YOLO hat {FaceCount} Gesicht(er) erkannt in {ElapsedMs}ms",
-            detectedFaces.Count, sw.ElapsedMilliseconds);
+        logger.LogInformation("[PIPELINE:ObjRec] Schritt 2/3: Ollama hat [{Objects}] erkannt in {ElapsedMs}ms (PersonDetected={PersonDetected})",
+            string.Join(", ", detection.Objects ?? []), sw.ElapsedMilliseconds, detection.PersonDetected);
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "[PIPELINE:ObjRec] Schritt 2/4: YOLO FEHLGESCHLAGEN");
-        detectedFaces = [];
+        logger.LogError(ex, "[PIPELINE:ObjRec] Schritt 2/3: Ollama Objekterkennung FEHLGESCHLAGEN");
+        detection = new OllamaDetectionResult([], false);
     }
 
-    var personCount = detectedFaces.Count;
+    var detectedObjects = detection.Objects ?? [];
+    var personDetected = detection.PersonDetected ?? false;
 
-    logger.LogInformation("[PIPELINE:ObjRec] Schritt 3/4: PersonCount={PersonCount} in MetadataStorage speichern...", personCount);
-    await metadataStorage.UpdatePersonCountAsync(request.MediaId, personCount);
+    logger.LogInformation("[PIPELINE:ObjRec] Schritt 3/3: Ergebnisse weiterleiten...");
 
-    var faces = new List<FaceInfo>();
-    if (personCount > 0)
+    if (personDetected)
     {
-        logger.LogInformation("[PIPELINE:ObjRec] Schritt 4/4: {PersonCount} Gesicht(er) mit Ollama beschreiben...", personCount);
-        for (int i = 0; i < detectedFaces.Count; i++)
-        {
-            var detected = detectedFaces[i];
-            logger.LogInformation(
-                "[PIPELINE:ObjRec] Gesicht {Index}/{Total}: Bbox=({X:F1},{Y:F1},{W:F1},{H:F1}) Conf={Conf:F2}",
-                i + 1, personCount, detected.BboxX, detected.BboxY, detected.BboxWidth, detected.BboxHeight, detected.Confidence);
-
-            var description = await ollama.DescribeFaceAsync(base64Image, i, personCount);
-
-            var faceInfo = new FaceInfo(
-                description,
-                detected.BboxX,
-                detected.BboxY,
-                detected.BboxWidth,
-                detected.BboxHeight);
-
-            faces.Add(faceInfo);
-            await metadataStorage.StoreFaceAsync(request.MediaId, faceInfo.FaceDescription,
-                faceInfo.BboxX, faceInfo.BboxY, faceInfo.BboxWidth, faceInfo.BboxHeight);
-            logger.LogInformation("[PIPELINE:ObjRec] Gesicht {Index}/{Total}: Gespeichert", i + 1, personCount);
-        }
+        logger.LogInformation("[PIPELINE:ObjRec] Person erkannt → FaceRecognition aufrufen für MediaId={MediaId}", request.MediaId);
+        await faceRecognition.RecognizeFacesAsync(request.MediaId, request.StorageBucket, request.StorageKey);
     }
-    else
+
+    var nonPersonObjects = detectedObjects
+        .Where(o => !string.Equals(o, "person", StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    if (nonPersonObjects.Count > 0)
     {
-        logger.LogInformation("[PIPELINE:ObjRec] Schritt 4/4: Übersprungen (keine Gesichter erkannt)");
+        logger.LogInformation("[PIPELINE:ObjRec] Nicht-Personen-Objekte [{Objects}] → AiTagging für MediaId={MediaId}",
+            string.Join(", ", nonPersonObjects), request.MediaId);
+        await aiTagging.StoreTagsAsync(request.MediaId, nonPersonObjects);
     }
 
-    logger.LogInformation("[PIPELINE:ObjRec] ===== Recognition abgeschlossen: MediaId={MediaId}, Personen={PersonCount}, Gesichter={FaceCount} =====",
-        request.MediaId, personCount, faces.Count);
-    return Results.Ok(new RecognizeResponse(request.MediaId, personCount, faces));
+    logger.LogInformation("[PIPELINE:ObjRec] ===== Objekterkennung abgeschlossen: MediaId={MediaId}, PersonDetected={PersonDetected}, Objekte=[{Objects}] =====",
+        request.MediaId, personDetected, string.Join(", ", detectedObjects));
+    return Results.Ok(new RecognizeResponse(request.MediaId, personDetected, detectedObjects));
 });
 
 app.Run();

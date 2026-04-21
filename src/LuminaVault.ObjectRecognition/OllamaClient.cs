@@ -4,8 +4,7 @@ using System.Text.Json.Serialization;
 namespace LuminaVault.ObjectRecognition;
 
 /// <summary>
-/// Uses Ollama vision models to describe faces in images. Face detection and bounding boxes
-/// are handled by YOLO — this client only generates textual descriptions.
+/// Uses Ollama vision models to detect objects in images (persons, cats, dogs, etc.).
 /// </summary>
 public class OllamaClient(HttpClient httpClient, ILogger<OllamaClient> logger)
 {
@@ -16,43 +15,42 @@ public class OllamaClient(HttpClient httpClient, ILogger<OllamaClient> logger)
     };
 
     /// <summary>
-    /// Describes a face at the given bounding box region in the image using the Ollama vision model.
+    /// Detects objects in the image and returns a list of detected object labels
+    /// along with a flag indicating whether a person was found.
     /// </summary>
-    public async Task<string> DescribeFaceAsync(string base64Image, int faceIndex, int totalFaces, string model = "llava:7b")
+    public async Task<OllamaDetectionResult> DetectObjectsAsync(string base64Image, string model = "llava:7b")
     {
-        var prompt = totalFaces == 1
-            ? "Describe the person's appearance in this image in one brief sentence (age, gender, hair, clothing, expression). Respond ONLY with JSON: {\"description\": \"...\"}"
-            : $"There are {totalFaces} people in this image. Describe person #{faceIndex + 1}'s appearance in one brief sentence (age, gender, hair, clothing, expression). Respond ONLY with JSON: {{\"description\": \"...\"}}";
+        const string prompt =
+            "List all objects visible in this image (e.g. person, cat, dog, car, chair, tree). " +
+            "Respond ONLY with JSON in this exact format: " +
+            "{\"objects\": [\"person\", \"cat\"], \"person_detected\": true}";
 
         var request = new OllamaGenerateRequest(model, prompt, [base64Image], false, "json");
 
-        logger.LogInformation("[PIPELINE:Ollama] DescribeFace #{FaceIndex} → POST /api/generate (Model={Model})",
-            faceIndex + 1, model);
+        logger.LogInformation("[PIPELINE:Ollama] DetectObjects → POST /api/generate (Model={Model})", model);
         try
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var response = await httpClient.PostAsJsonAsync("/api/generate", request, JsonOptions);
             sw.Stop();
-            logger.LogInformation("[PIPELINE:Ollama] DescribeFace #{FaceIndex} ← {StatusCode} in {ElapsedMs}ms",
-                faceIndex + 1, response.StatusCode, sw.ElapsedMilliseconds);
+            logger.LogInformation("[PIPELINE:Ollama] DetectObjects ← {StatusCode} in {ElapsedMs}ms",
+                response.StatusCode, sw.ElapsedMilliseconds);
             response.EnsureSuccessStatusCode();
 
             var result = await response.Content.ReadFromJsonAsync<OllamaGenerateResponse>(JsonOptions);
-            logger.LogInformation("[PIPELINE:Ollama] DescribeFace #{FaceIndex} Rohantwort: {Raw}",
-                faceIndex + 1, result?.Response ?? "(null)");
-            if (string.IsNullOrWhiteSpace(result?.Response))
-                return string.Empty;
+            logger.LogInformation("[PIPELINE:Ollama] DetectObjects Rohantwort: {Raw}", result?.Response ?? "(null)");
 
-            var parsed = JsonSerializer.Deserialize<DescriptionResult>(result.Response,
+            if (string.IsNullOrWhiteSpace(result?.Response))
+                return new OllamaDetectionResult([], false);
+
+            var parsed = JsonSerializer.Deserialize<OllamaDetectionResult>(result.Response,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            return parsed?.Description ?? string.Empty;
+            return parsed ?? new OllamaDetectionResult([], false);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "[PIPELINE:Ollama] DescribeFace #{FaceIndex} FEHLGESCHLAGEN", faceIndex + 1);
-            return string.Empty;
+            logger.LogWarning(ex, "[PIPELINE:Ollama] DetectObjects FEHLGESCHLAGEN");
+            return new OllamaDetectionResult([], false);
         }
     }
 }
-
-public record DescriptionResult(string? Description);

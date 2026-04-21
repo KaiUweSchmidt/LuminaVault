@@ -10,3 +10,5 @@ public class TaggingResult
 }
 
 public record AnalyzeRequest(Guid MediaId, string ContentType, string StorageKey);
+
+public record ObjectTagsRequest(Guid MediaId, string[] Tags);

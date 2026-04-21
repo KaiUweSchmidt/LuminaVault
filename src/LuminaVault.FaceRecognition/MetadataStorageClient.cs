@@ -1,4 +1,4 @@
-namespace LuminaVault.ObjectRecognition;
+namespace LuminaVault.FaceRecognition;
 
 public class MetadataStorageClient(HttpClient httpClient, ILogger<MetadataStorageClient> logger)
 {

@@ -1,15 +1,16 @@
-namespace LuminaVault.ObjectRecognition;
+namespace LuminaVault.FaceRecognition;
 
-public record RecognizeRequest(
+public record FaceRecognizeRequest(
     Guid MediaId,
-    string ContentType,
     string StorageBucket,
     string StorageKey);
 
-public record RecognizeResponse(
+public record FaceRecognizeResponse(
     Guid MediaId,
-    bool PersonDetected,
-    List<string> DetectedObjects);
+    int PersonCount,
+    List<FaceInfo> Faces);
+
+public record FaceInfo(string FaceDescription, double BboxX, double BboxY, double BboxWidth, double BboxHeight);
 
 public record OllamaGenerateRequest(
     string Model,
@@ -19,5 +20,3 @@ public record OllamaGenerateRequest(
     string? Format = null);
 
 public record OllamaGenerateResponse(string Response);
-
-public record OllamaDetectionResult(List<string>? Objects, bool? PersonDetected);
