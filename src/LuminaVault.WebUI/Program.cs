@@ -12,6 +12,8 @@ builder.Services.AddRazorComponents()
 
 builder.Services.Configure<ImportSettings>(builder.Configuration.GetSection(ImportSettings.SectionName));
 
+builder.Services.AddScoped<GalleryUserSettingsService>();
+
 builder.Services.AddHttpClient<MediaApiClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:ApiGateway"]
         ?? "http://api-gateway:8080"));

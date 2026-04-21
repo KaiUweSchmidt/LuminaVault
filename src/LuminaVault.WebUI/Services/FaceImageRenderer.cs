@@ -54,7 +54,7 @@ public static class FaceImageRenderer
 
                 ctx.Draw(pen, new RectangleF(x, y, w, h));
 
-                var label = $"Gesicht {i + 1}";
+                var label = string.IsNullOrWhiteSpace(face.Name) ? $"Gesicht {i + 1}" : face.Name;
                 var labelY = Math.Max(0, y - font.Size - 4);
                 ctx.DrawText(label, font, color, new PointF(x, labelY));
             }

@@ -1,10 +1,25 @@
 @page "/settings"
 @using LuminaVault.WebUI.Services
 @inject MediaApiClient MediaApi
+@inject GalleryUserSettingsService GallerySettings
 @rendermode InteractiveServer
 
 <div class="settings-page">
     <h1>⚙️ Einstellungen</h1>
+
+    <section class="settings-section">
+        <h2>🖼️ Galerie :: Preview</h2>
+        <div class="settings-card">
+            <label class="settings-toggle-label">
+                <input type="checkbox" @bind="GallerySettings.AlwaysShowFaceBboxes" />
+                Immer erkannte Gesichter mit Rahmen versehen
+            </label>
+            <p class="settings-description">
+                Wenn aktiviert, werden beim Wechsel der Bildauswahl die erkannten Gesichter
+                automatisch mit Rahmen im Vorschaubild angezeigt.
+            </p>
+        </div>
+    </section>
 
     <section class="settings-section settings-danger">
         <h2>⚠️ Gefahrenzone</h2>
@@ -53,6 +68,34 @@
         }
     </section>
 </div>
+
+<style>
+    .settings-section {
+        margin-bottom: 2rem;
+        border: 1px solid var(--color-border, #2a2e3a);
+        border-radius: 6px;
+        padding: 1.25rem;
+        background: var(--color-surface, #1a1d27);
+    }
+    .settings-section h2 { margin-bottom: 0.75rem; }
+    .settings-card {
+        padding: 0.75rem;
+        background: var(--color-surface-hover, #242836);
+        border-radius: 4px;
+    }
+    .settings-toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        font-weight: 500;
+    }
+    .settings-description {
+        margin-top: 0.4rem;
+        font-size: 0.85em;
+        color: var(--color-text-muted, #8b8fa3);
+    }
+</style>
 
 @code {
     private bool _confirmVisible;
