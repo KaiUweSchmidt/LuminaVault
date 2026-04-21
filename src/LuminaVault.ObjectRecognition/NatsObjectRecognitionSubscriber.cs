@@ -2,16 +2,19 @@ using LuminaVault.ServiceDefaults;
 using Minio;
 using Minio.DataModel.Args;
 using NATS.Client.Core;
+using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
 
 namespace LuminaVault.ObjectRecognition;
 
 /// <summary>
-/// Background service that subscribes to the <c>media.imported</c> NATS subject and
-/// runs YOLO object recognition (plus face-recognition delegation) for every newly
-/// imported image.
+/// Background service that consumes <c>media.imported</c> events from JetStream
+/// with a durable consumer and explicit Ack/Nak, ensuring no messages are lost
+/// even during long-running Ollama inference or service restarts.
 /// </summary>
 public sealed class NatsObjectRecognitionSubscriber(
     INatsConnection nats,
+    INatsJSContext js,
     IMinioClient minio,
     YoloObjectDetector yolo,
     FaceRecognitionClient faceRecognition,
@@ -20,12 +23,31 @@ public sealed class NatsObjectRecognitionSubscriber(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("[NATS:ObjRec] Subscriber gestartet — wartet auf '{Subject}'", NatsSubjects.MediaImported);
+        logger.LogInformation("[NATS:ObjRec] JetStream consumer starten — Stream={Stream}, Consumer={Consumer}",
+            NatsStreams.MediaPipeline, NatsConsumers.ObjectRecognition);
 
-        await foreach (var msg in nats.SubscribeAsync<MediaImportedEvent>(NatsSubjects.MediaImported, cancellationToken: stoppingToken))
+        await Extensions.EnsureJetStreamResourcesAsync(js);
+
+        var stream = await js.GetStreamAsync(NatsStreams.MediaPipeline, cancellationToken: stoppingToken);
+        var consumer = await stream.CreateOrUpdateConsumerAsync(
+            new ConsumerConfig(NatsConsumers.ObjectRecognition)
+            {
+                FilterSubject = NatsSubjects.MediaImported,
+                AckWait = TimeSpan.FromMinutes(15),
+                MaxDeliver = 3,
+                AckPolicy = ConsumerConfigAckPolicy.Explicit,
+            }, stoppingToken);
+
+        logger.LogInformation("[NATS:ObjRec] Consumer bereit — wartet auf Messages");
+
+        await foreach (var msg in consumer.ConsumeAsync<MediaImportedEvent>(cancellationToken: stoppingToken))
         {
             var evt = msg.Data;
-            if (evt is null) continue;
+            if (evt is null)
+            {
+                await msg.AckAsync(cancellationToken: stoppingToken);
+                continue;
+            }
 
             logger.LogInformation("[NATS:ObjRec] Event empfangen: MediaId={MediaId}, ContentType={ContentType}",
                 evt.MediaId, evt.ContentType);
@@ -33,16 +55,24 @@ public sealed class NatsObjectRecognitionSubscriber(
             if (!evt.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
             {
                 logger.LogInformation("[NATS:ObjRec] Übersprungen (kein Bild): MediaId={MediaId}", evt.MediaId);
+                await msg.AckAsync(cancellationToken: stoppingToken);
+                await PublishStepCompletedAsync(evt.MediaId, PipelineSteps.ObjectRecognition, 0, true);
                 continue;
             }
 
             try
             {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 await ProcessAsync(evt, stoppingToken);
+                sw.Stop();
+                await msg.AckAsync(cancellationToken: stoppingToken);
+                await PublishStepCompletedAsync(evt.MediaId, PipelineSteps.ObjectRecognition, sw.ElapsedMilliseconds, true);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "[NATS:ObjRec] Objekterkennung FEHLGESCHLAGEN für MediaId={MediaId}", evt.MediaId);
+                await msg.NakAsync(cancellationToken: stoppingToken);
+                await PublishStepCompletedAsync(evt.MediaId, PipelineSteps.ObjectRecognition, 0, false);
             }
         }
 
@@ -87,5 +117,18 @@ public sealed class NatsObjectRecognitionSubscriber(
         }
 
         logger.LogInformation("[NATS:ObjRec] Objekterkennung abgeschlossen: MediaId={MediaId}", evt.MediaId);
+    }
+
+    private async Task PublishStepCompletedAsync(Guid mediaId, string stepName, long durationMs, bool success)
+    {
+        try
+        {
+            var stepEvent = new PipelineStepCompletedEvent(mediaId, stepName, durationMs, success, DateTimeOffset.UtcNow);
+            await nats.PublishAsync(NatsSubjects.PipelineStepCompleted, stepEvent);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[NATS:ObjRec] Step-Completion-Event konnte nicht veröffentlicht werden: {Step}", stepName);
+        }
     }
 }

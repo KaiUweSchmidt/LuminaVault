@@ -2,17 +2,20 @@ using LuminaVault.ServiceDefaults;
 using Minio;
 using Minio.DataModel.Args;
 using NATS.Client.Core;
+using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
 
 namespace LuminaVault.ThumbnailGeneration;
 
 /// <summary>
-/// Background service that subscribes to the <c>media.imported</c> NATS subject and
-/// generates thumbnails for every newly imported media file.
+/// Background service that consumes <c>media.imported</c> events from JetStream
+/// with a durable consumer and generates thumbnails for every newly imported media file.
 /// </summary>
 public sealed class NatsThumbnailSubscriber(
     INatsConnection nats,
+    INatsJSContext js,
     IMinioClient minio,
     ILogger<NatsThumbnailSubscriber> logger) : BackgroundService
 {
@@ -22,14 +25,32 @@ public sealed class NatsThumbnailSubscriber(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("[NATS:Thumbnails] Subscriber gestartet — wartet auf '{Subject}'", NatsSubjects.MediaImported);
+        logger.LogInformation("[NATS:Thumbnails] JetStream consumer starten — Stream={Stream}, Consumer={Consumer}",
+            NatsStreams.MediaPipeline, NatsConsumers.ThumbnailGeneration);
 
         await EnsureBucketExistsAsync(ThumbnailBucket);
+        await Extensions.EnsureJetStreamResourcesAsync(js);
 
-        await foreach (var msg in nats.SubscribeAsync<MediaImportedEvent>(NatsSubjects.MediaImported, cancellationToken: stoppingToken))
+        var stream = await js.GetStreamAsync(NatsStreams.MediaPipeline, cancellationToken: stoppingToken);
+        var consumer = await stream.CreateOrUpdateConsumerAsync(
+            new ConsumerConfig(NatsConsumers.ThumbnailGeneration)
+            {
+                FilterSubject = NatsSubjects.MediaImported,
+                AckWait = TimeSpan.FromMinutes(2),
+                MaxDeliver = 3,
+                AckPolicy = ConsumerConfigAckPolicy.Explicit,
+            }, stoppingToken);
+
+        logger.LogInformation("[NATS:Thumbnails] Consumer bereit — wartet auf Messages");
+
+        await foreach (var msg in consumer.ConsumeAsync<MediaImportedEvent>(cancellationToken: stoppingToken))
         {
             var evt = msg.Data;
-            if (evt is null) continue;
+            if (evt is null)
+            {
+                await msg.AckAsync(cancellationToken: stoppingToken);
+                continue;
+            }
 
             logger.LogInformation("[NATS:Thumbnails] Event empfangen: MediaId={MediaId}, ContentType={ContentType}",
                 evt.MediaId, evt.ContentType);
@@ -39,16 +60,24 @@ public sealed class NatsThumbnailSubscriber(
             if (!isImageOrVideo)
             {
                 logger.LogInformation("[NATS:Thumbnails] Übersprungen (kein Bild/Video): MediaId={MediaId}", evt.MediaId);
+                await msg.AckAsync(cancellationToken: stoppingToken);
+                await PublishStepCompletedAsync(evt.MediaId, PipelineSteps.ThumbnailGeneration, 0, true);
                 continue;
             }
 
             try
             {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 await GenerateThumbnailAsync(evt, stoppingToken);
+                sw.Stop();
+                await msg.AckAsync(cancellationToken: stoppingToken);
+                await PublishStepCompletedAsync(evt.MediaId, PipelineSteps.ThumbnailGeneration, sw.ElapsedMilliseconds, true);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "[NATS:Thumbnails] Thumbnail-Generierung FEHLGESCHLAGEN für MediaId={MediaId}", evt.MediaId);
+                await msg.NakAsync(cancellationToken: stoppingToken);
+                await PublishStepCompletedAsync(evt.MediaId, PipelineSteps.ThumbnailGeneration, 0, false);
             }
         }
 
@@ -147,6 +176,18 @@ public sealed class NatsThumbnailSubscriber(
         {
             if (File.Exists(tempInput)) File.Delete(tempInput);
             if (File.Exists(tempOutput)) File.Delete(tempOutput);
+        }
+    }
+    private async Task PublishStepCompletedAsync(Guid mediaId, string stepName, long durationMs, bool success)
+    {
+        try
+        {
+            var stepEvent = new PipelineStepCompletedEvent(mediaId, stepName, durationMs, success, DateTimeOffset.UtcNow);
+            await nats.PublishAsync(NatsSubjects.PipelineStepCompleted, stepEvent);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[NATS:Thumbnails] Step-Completion-Event konnte nicht veröffentlicht werden: {Step}", stepName);
         }
     }
 }
