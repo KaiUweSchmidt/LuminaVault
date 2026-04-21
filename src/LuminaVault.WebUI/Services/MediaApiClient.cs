@@ -55,14 +55,6 @@ public class MediaApiClient(HttpClient httpClient)
     }
 
     /// <summary>
-    /// Gets the list of imported media items from the MediaImport service.
-    /// </summary>
-    public async Task<List<ImportedMediaItem>> GetImportedMediaAsync()
-    {
-        return await httpClient.GetFromJsonAsync<List<ImportedMediaItem>>("/api/media/media") ?? [];
-    }
-
-    /// <summary>
     /// Gets original media file bytes from the internal media service.
     /// </summary>
     public async Task<(byte[] Data, string ContentType)?> GetOriginalBytesAsync(Guid mediaId, CancellationToken cancellationToken = default)
@@ -128,11 +120,15 @@ public class MediaApiClient(HttpClient httpClient)
 
 public record MediaItem(
     Guid Id,
+    string FileName,
+    string ContentType,
+    long FileSizeBytes,
     string Title,
     string Description,
     string[] Tags,
     double? GpsLatitude,
     double? GpsLongitude,
+    string? GpsLocation,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
     int? PersonCount = null);
@@ -151,5 +147,3 @@ public record Face(
 public record SearchResult(Guid MediaId, double Distance);
 
 public record ImportResult(Guid Id, string FileName, string ContentType, long FileSizeBytes, DateTimeOffset ImportedAt, string StorageBucket, string StorageKey);
-
-public record ImportedMediaItem(Guid Id, string FileName, string ContentType, long FileSizeBytes, DateTimeOffset ImportedAt, string StorageBucket, string StorageKey);

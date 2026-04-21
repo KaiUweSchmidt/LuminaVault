@@ -41,11 +41,15 @@ app.MapPost("/media", async (CreateMediaMetadataRequest request, MetadataDbConte
     var metadata = new MediaMetadata
     {
         Id = request.MediaId,
+        FileName = request.FileName,
+        ContentType = request.ContentType,
+        FileSizeBytes = request.FileSizeBytes,
         Title = request.Title,
         Description = request.Description,
         Tags = request.Tags,
         GpsLatitude = request.GpsLatitude,
         GpsLongitude = request.GpsLongitude,
+        GpsLocation = request.GpsLocation,
         CreatedAt = DateTimeOffset.UtcNow
     };
     await db.MediaMetadata.AddAsync(metadata);

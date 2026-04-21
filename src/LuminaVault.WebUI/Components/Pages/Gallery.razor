@@ -35,6 +35,7 @@
                             <th class="col-date">Aufnahme Datum</th>
                             <th class="col-size">Dateigröße</th>
                             <th class="col-type">Datei Typ</th>
+                            <th class="col-gps">GPS Standort</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -55,9 +56,10 @@
                                         <span class="thumb-placeholder">📷</span>
                                     }
                                 </td>
-                                <td class="col-date">@item.ImportedAt.LocalDateTime.ToString("dd.MM.yyyy HH:mm")</td>
+                                <td class="col-date">@item.CreatedAt.LocalDateTime.ToString("dd.MM.yyyy HH:mm")</td>
                                 <td class="col-size">@FormatFileSize(item.FileSizeBytes)</td>
                                 <td class="col-type">@item.ContentType</td>
+                                <td class="col-gps">@FormatGpsLocation(item)</td>
                             </tr>
                         }
                     </tbody>
@@ -125,6 +127,14 @@
                 @foreach (var item in _similarPersons)
                 {
                     <div class="similar-person-item">
+                        @if (_thumbnails.TryGetValue(item.Id, out var thumbUrl) && thumbUrl is not null)
+                        {
+                            <img src="@thumbUrl" alt="@item.Title" class="similar-person-thumb" loading="lazy" />
+                        }
+                        else
+                        {
+                            <span class="similar-person-thumb-placeholder">📷</span>
+                        }
                         <strong>@item.Title</strong>
                         <span class="person-badge">👤 @item.PersonCount</span>
                         <span class="tags">@string.Join(", ", item.Tags)</span>
@@ -229,6 +239,24 @@
         align-items: center;
         flex-wrap: wrap;
     }
+    .similar-person-thumb {
+        width: 48px;
+        height: 48px;
+        object-fit: cover;
+        border-radius: 4px;
+        flex-shrink: 0;
+    }
+    .similar-person-thumb-placeholder {
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #e8e8e8;
+        border-radius: 4px;
+        font-size: 1.4em;
+        flex-shrink: 0;
+    }
     .person-badge {
         display: inline-block;
         background: #4a90d9;
@@ -266,13 +294,13 @@
 </style>
 
 @code {
-    private List<ImportedMediaItem> _mediaItems = [];
+    private List<MediaItem> _mediaItems = [];
     private readonly Dictionary<Guid, string?> _thumbnails = [];
     private bool _isLoading = true;
     private string? _errorMessage;
 
     private Guid? _selectedId;
-    private ImportedMediaItem? _selectedItem;
+    private MediaItem? _selectedItem;
     private string? _previewUrl;
     private bool _isLoadingPreview;
 
@@ -280,7 +308,7 @@
     {
         try
         {
-            _mediaItems = await MediaApi.GetImportedMediaAsync();
+            _mediaItems = await MediaApi.GetMediaAsync();
 
             foreach (var item in _mediaItems)
             {
@@ -297,7 +325,7 @@
         }
     }
 
-    private async Task SelectItemAsync(ImportedMediaItem item)
+    private async Task SelectItemAsync(MediaItem item)
     {
         if (_selectedId == item.Id)
             return;
@@ -337,7 +365,7 @@
     private bool _contextMenuVisible;
     private double _contextMenuX;
     private double _contextMenuY;
-    private ImportedMediaItem? _contextMenuItem;
+    private MediaItem? _contextMenuItem;
 
     private bool _isSearching;
     private bool _similarPersonsVisible;
@@ -350,7 +378,7 @@
     private byte[]? _cachedImageBytes;
     private List<string> _allFaceNames = [];
 
-    private void ShowContextMenu(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, ImportedMediaItem item)
+    private void ShowContextMenu(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, MediaItem item)
     {
         _contextMenuX = e.ClientX;
         _contextMenuY = e.ClientY;
@@ -372,6 +400,10 @@
         try
         {
             _similarPersons = await MediaApi.FindSimilarPersonsAsync(_contextMenuItem.Id);
+            foreach (var p in _similarPersons.Where(p => !_thumbnails.ContainsKey(p.Id)))
+            {
+                _thumbnails[p.Id] = $"/proxy/thumbnail/{p.Id}";
+            }
         }
         catch (Exception ex)
         {
@@ -460,4 +492,15 @@
         < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
         _ => $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
     };
+
+    private static string FormatGpsLocation(MediaItem item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.GpsLocation))
+            return item.GpsLocation;
+
+        if (item.GpsLatitude.HasValue && item.GpsLongitude.HasValue)
+            return $"{item.GpsLatitude:F4}°, {item.GpsLongitude:F4}°";
+
+        return "–";
+    }
 }

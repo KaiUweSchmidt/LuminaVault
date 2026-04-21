@@ -15,6 +15,7 @@ public class MetadataDbContext(DbContextOptions<MetadataDbContext> options) : Db
             entity.Property(e => e.Title).IsRequired().HasMaxLength(512);
             entity.Property(e => e.Description).HasMaxLength(4096);
             entity.Property(e => e.Tags).HasColumnType("text[]");
+            entity.Property(e => e.GpsLocation).HasMaxLength(512);
         });
 
         modelBuilder.Entity<Face>(entity =>
