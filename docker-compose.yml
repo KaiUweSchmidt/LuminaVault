@@ -145,8 +145,18 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       Services__ApiGateway: http://api-gateway:8080
+      # Container-internal path that maps to HOST_MEDIA_PATH on the host.
+      # Change HOST_MEDIA_PATH in your .env file or shell environment to point
+      # to the directory on the host machine you want to import from.
+      Import__HostMediaPath: /media/import
     volumes:
       - webui-keys:/root/.aspnet/DataProtection-Keys
+      # Bind-mount a host directory into the container so that the batch import
+      # feature can read local media files.  Set HOST_MEDIA_PATH to the absolute
+      # path of the directory on the Docker host, e.g.:
+      #   HOST_MEDIA_PATH=/mnt/nas/photos docker compose up
+      # The default falls back to a local ./media sub-directory.
+      - ${HOST_MEDIA_PATH:-./media}:/media/import:ro
     depends_on:
       - api-gateway
     ports:

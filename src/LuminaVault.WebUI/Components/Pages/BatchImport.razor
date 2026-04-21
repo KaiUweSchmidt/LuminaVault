@@ -2,6 +2,7 @@
 @using LuminaVault.WebUI.Services
 @inject BatchImportService ImportService
 @inject BatchImportCircuitHandler CircuitHandler
+@inject HostMediaPathService HostMediaPath
 @rendermode InteractiveServer
 @implements IDisposable
 
@@ -138,6 +139,10 @@
     protected override void OnInitialized()
     {
         ImportService.OnProgressChanged += HandleProgress;
+
+        // Pre-fill the directory input with the configured host-mount path.
+        if (string.IsNullOrEmpty(_directoryPath))
+            _directoryPath = HostMediaPath.HostMediaPath;
 
         // Register this circuit as the import owner so the circuit handler
         // can pause the import if this tab/window is closed.

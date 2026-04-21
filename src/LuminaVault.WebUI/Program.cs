@@ -17,6 +17,7 @@ builder.Services.AddScoped<GalleryUserSettingsService>();
 
 // Batch import: singleton state + scoped circuit handler for pause-on-disconnect
 builder.Services.AddSingleton<BatchImportService>();
+builder.Services.AddSingleton<HostMediaPathService>();
 builder.Services.AddScoped<BatchImportCircuitHandler>();
 builder.Services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<BatchImportCircuitHandler>());
 
