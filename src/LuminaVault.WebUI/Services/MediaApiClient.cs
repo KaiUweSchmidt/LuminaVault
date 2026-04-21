@@ -118,6 +118,39 @@ public class MediaApiClient(HttpClient httpClient)
             response.EnsureSuccessStatusCode();
         }
     }
+
+    // ===== Collections =====
+
+    public async Task<List<CollectionDto>> GetCollectionsAsync() =>
+        await httpClient.GetFromJsonAsync<List<CollectionDto>>("/api/metadata/collections") ?? [];
+
+    public async Task<CollectionDto?> CreateCollectionAsync(string name, string description)
+    {
+        var response = await httpClient.PostAsJsonAsync("/api/metadata/collections", new CreateCollectionRequest(name, description));
+        if (!response.IsSuccessStatusCode) return null;
+        return await response.Content.ReadFromJsonAsync<CollectionDto>();
+    }
+
+    public async Task<bool> DeleteCollectionAsync(Guid collectionId)
+    {
+        var response = await httpClient.DeleteAsync($"/api/metadata/collections/{collectionId}");
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> AddMediaToCollectionAsync(Guid collectionId, Guid mediaId)
+    {
+        var response = await httpClient.PostAsync($"/api/metadata/collections/{collectionId}/media/{mediaId}", null);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<bool> RemoveMediaFromCollectionAsync(Guid collectionId, Guid mediaId)
+    {
+        var response = await httpClient.DeleteAsync($"/api/metadata/collections/{collectionId}/media/{mediaId}");
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<List<Guid>> GetCollectionMediaIdsAsync(Guid collectionId) =>
+        await httpClient.GetFromJsonAsync<List<Guid>>($"/api/metadata/collections/{collectionId}/media") ?? [];
 }
 
 public record MediaItem(
@@ -149,3 +182,6 @@ public record Face(
 public record SearchResult(Guid MediaId, double Distance);
 
 public record ImportResult(Guid Id, string FileName, string ContentType, long FileSizeBytes, DateTimeOffset ImportedAt, string StorageBucket, string StorageKey);
+
+public record CollectionDto(Guid Id, string Name, string Description, DateTimeOffset CreatedAt, int ImageCount);
+public record CreateCollectionRequest(string Name, string Description);

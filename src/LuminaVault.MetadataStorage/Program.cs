@@ -165,10 +165,90 @@ app.MapGet("/faces/names", async (MetadataDbContext db) =>
 
 app.MapDelete("/admin/purge-all", async (MetadataDbContext db, ILogger<Program> logger) =>
 {
+    var collectionMediaCount = await db.CollectionMediaItems.ExecuteDeleteAsync();
+    var collectionCount = await db.Collections.ExecuteDeleteAsync();
     var faceCount = await db.Faces.ExecuteDeleteAsync();
     var metaCount = await db.MediaMetadata.ExecuteDeleteAsync();
-    logger.LogWarning("[ADMIN] Purge-All: {FaceCount} Faces und {MetaCount} Metadata gelöscht", faceCount, metaCount);
-    return Results.Ok(new { DeletedFaces = faceCount, DeletedMetadata = metaCount });
+    logger.LogWarning("[ADMIN] Purge-All: {FaceCount} Faces, {MetaCount} Metadata, {CollectionCount} Collections, {CollectionMediaCount} CollectionMediaItems gelöscht",
+        faceCount, metaCount, collectionCount, collectionMediaCount);
+    return Results.Ok(new { DeletedFaces = faceCount, DeletedMetadata = metaCount, DeletedCollections = collectionCount, DeletedCollectionMediaItems = collectionMediaCount });
+});
+
+// Collections endpoints
+app.MapGet("/collections", async (MetadataDbContext db) =>
+{
+    var collections = await db.Collections
+        .Select(c => new
+        {
+            c.Id,
+            c.Name,
+            c.Description,
+            c.CreatedAt,
+            ImageCount = db.CollectionMediaItems.Count(i => i.CollectionId == c.Id)
+        })
+        .OrderBy(c => c.Name)
+        .ToListAsync();
+    return Results.Ok(collections);
+});
+
+app.MapGet("/collections/{id:guid}", async (Guid id, MetadataDbContext db) =>
+{
+    var collection = await db.Collections.FindAsync(id);
+    return collection is null ? Results.NotFound() : Results.Ok(collection);
+});
+
+app.MapPost("/collections", async (CreateCollectionRequest request, MetadataDbContext db) =>
+{
+    var collection = new Collection
+    {
+        Id = Guid.NewGuid(),
+        Name = request.Name,
+        Description = request.Description ?? string.Empty,
+        CreatedAt = DateTimeOffset.UtcNow
+    };
+    await db.Collections.AddAsync(collection);
+    await db.SaveChangesAsync();
+    return Results.Created($"/collections/{collection.Id}", collection);
+});
+
+app.MapDelete("/collections/{id:guid}", async (Guid id, MetadataDbContext db) =>
+{
+    var collection = await db.Collections.FindAsync(id);
+    if (collection is null) return Results.NotFound();
+    db.Collections.Remove(collection);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+});
+
+app.MapPost("/collections/{id:guid}/media/{mediaId:guid}", async (Guid id, Guid mediaId, MetadataDbContext db) =>
+{
+    var collection = await db.Collections.FindAsync(id);
+    if (collection is null) return Results.NotFound();
+    var exists = await db.CollectionMediaItems.AnyAsync(i => i.CollectionId == id && i.MediaId == mediaId);
+    if (!exists)
+    {
+        await db.CollectionMediaItems.AddAsync(new CollectionMediaItem { CollectionId = id, MediaId = mediaId });
+        await db.SaveChangesAsync();
+    }
+    return Results.Ok();
+});
+
+app.MapDelete("/collections/{id:guid}/media/{mediaId:guid}", async (Guid id, Guid mediaId, MetadataDbContext db) =>
+{
+    var item = await db.CollectionMediaItems.FindAsync(id, mediaId);
+    if (item is null) return Results.NotFound();
+    db.CollectionMediaItems.Remove(item);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+});
+
+app.MapGet("/collections/{id:guid}/media", async (Guid id, MetadataDbContext db) =>
+{
+    var mediaIds = await db.CollectionMediaItems
+        .Where(i => i.CollectionId == id)
+        .Select(i => i.MediaId)
+        .ToListAsync();
+    return Results.Ok(mediaIds);
 });
 
 app.Run();

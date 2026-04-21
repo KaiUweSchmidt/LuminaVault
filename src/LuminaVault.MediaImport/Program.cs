@@ -104,21 +104,31 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     logger.LogInformation("[PIPELINE] Schritt 2/5: MinIO-Upload abgeschlossen in {ElapsedMs}ms", sw.ElapsedMilliseconds);
     await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.MinioUpload, sw.ElapsedMilliseconds, true, logger);
 
-    var mediaItem = new MediaItem
-    {
-        Id = mediaId,
-        FileName = file.FileName,
-        ContentType = file.ContentType,
-        FileSizeBytes = file.Length,
-        ImportedAt = DateTimeOffset.UtcNow,
-        StorageBucket = bucket,
-        StorageKey = storageKey
-    };
-
     logger.LogInformation("[PIPELINE] Schritt 3/5: MediaItem in DB speichern - MediaId={MediaId}", mediaId);
     sw.Restart();
-    await db.MediaItems.AddAsync(mediaItem);
-    await db.SaveChangesAsync();
+    var existingItem = await db.MediaItems.FindAsync(mediaId);
+    MediaItem mediaItem;
+    if (existingItem is not null)
+    {
+        // Idempotent retry — the previous attempt already persisted this item.
+        logger.LogInformation("[PIPELINE] Schritt 3/5: MediaItem existiert bereits (Retry erkannt) - MediaId={MediaId}", mediaId);
+        mediaItem = existingItem;
+    }
+    else
+    {
+        mediaItem = new MediaItem
+        {
+            Id = mediaId,
+            FileName = file.FileName,
+            ContentType = file.ContentType,
+            FileSizeBytes = file.Length,
+            ImportedAt = DateTimeOffset.UtcNow,
+            StorageBucket = bucket,
+            StorageKey = storageKey
+        };
+        await db.MediaItems.AddAsync(mediaItem);
+        await db.SaveChangesAsync();
+    }
     sw.Stop();
     logger.LogInformation("[PIPELINE] Schritt 3/5: DB-Speicherung abgeschlossen");
     await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.DatabaseSave, sw.ElapsedMilliseconds, true, logger);

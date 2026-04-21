@@ -1,0 +1,495 @@
+@page "/sammlungen"
+@using LuminaVault.WebUI.Services
+@inject MediaApiClient MediaApi
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<div class="sammlungen-page">
+    <h1>🗂️ Sammlungen</h1>
+    <p class="sammlungen-description">Verwalten Sie Ihre Fotosammlungen.</p>
+
+    <div class="sammlungen-toolbar">
+        <button class="btn-primary" @onclick="ShowNewCollectionDialog">➕ Neue Sammlung</button>
+        <button class="btn-danger" @onclick="DeleteSelectedCollectionAsync" disabled="@(_selectedCollection is null)">🗑️ Sammlung löschen</button>
+        <button class="btn-secondary" @onclick="RemoveSelectedMediaAsync" disabled="@(_selectedCollection is null || _selectedMediaIds.Count == 0)">➖ Bild(er) aus Sammlung entfernen</button>
+        <a class="btn-download @(_selectedCollection is null ? "btn-disabled" : "")"
+           href="@(_selectedCollection is not null ? $"/proxy/collections/{_selectedCollection.Id}/download" : "#")"
+           download>⬇️ Sammlung herunterladen</a>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="error-message">@_errorMessage</div>
+    }
+    @if (!string.IsNullOrEmpty(_successMessage))
+    {
+        <div class="success-message">@_successMessage</div>
+    }
+
+    @if (_isLoading)
+    {
+        <div class="loading-message">Lade Sammlungen…</div>
+    }
+    else if (_collections.Count == 0)
+    {
+        <div class="sammlungen-empty">
+            <span class="sammlungen-empty-icon">🗂️</span>
+            <p>Noch keine Sammlungen vorhanden.</p>
+        </div>
+    }
+    else
+    {
+        <div class="gallery-split">
+            <div class="gallery-list">
+                <table class="sammlungen-grid">
+                    <thead>
+                        <tr>
+                            <th class="sortable" @onclick='() => ToggleSort("name")'>Name @SortIndicator("name")</th>
+                            <th class="sortable" @onclick='() => ToggleSort("description")'>Beschreibung @SortIndicator("description")</th>
+                            <th class="sortable" @onclick='() => ToggleSort("created")'>Erstellt am @SortIndicator("created")</th>
+                            <th class="sortable" @onclick='() => ToggleSort("count")'>Anzahl Bilder @SortIndicator("count")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var collection in SortedCollections)
+                        {
+                            <tr class="@(collection.Id == _selectedCollection?.Id ? "selected" : "")"
+                                @onclick="() => ToggleExpandCollection(collection)">
+                                <td>@collection.Name</td>
+                                <td class="col-description">@collection.Description</td>
+                                <td>@collection.CreatedAt.LocalDateTime.ToString("dd.MM.yyyy HH:mm")</td>
+                                <td>@collection.ImageCount</td>
+                            </tr>
+                            @if (_expandedCollectionId == collection.Id)
+                            {
+                                <tr class="expanded-row">
+                                    <td colspan="4">
+                                        @if (_isLoadingMedia)
+                                        {
+                                            <div class="loading-message">Lade Bilder…</div>
+                                        }
+                                        else if (_collectionMediaIds.Count == 0)
+                                        {
+                                            <div class="expanded-empty">Diese Sammlung enthält keine Bilder.</div>
+                                        }
+                                        else
+                                        {
+                                            <div class="expanded-images">
+                                                @foreach (var mediaId in _collectionMediaIds)
+                                                {
+                                                    <div class="expanded-image-item @(_selectedMediaIds.Contains(mediaId) ? "selected-media" : "") @(_previewMediaId == mediaId ? "preview-active" : "")"
+                                                         @onclick="() => SelectMediaForPreview(mediaId)" @onclick:stopPropagation="true">
+                                                        <img src="/proxy/thumbnail/@mediaId" alt="@mediaId" loading="lazy"
+                                                             onerror="this.style.display='none'" />
+                                                        @if (_selectedMediaIds.Contains(mediaId))
+                                                        {
+                                                            <span class="check-mark">✔</span>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="gallery-preview">
+                @if (_previewMediaId is null)
+                {
+                    <div class="preview-empty">
+                        <span class="preview-empty-icon">👈</span>
+                        <p>Bild aus einer Sammlung auswählen</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="preview-container">
+                        <div class="preview-image-centering">
+                            <div class="preview-image-wrapper">
+                                <img src="/proxy/media/@_previewMediaId" alt="Vorschau" class="preview-media" />
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@if (_showNewCollectionDialog)
+{
+    <div class="modal-overlay" @onclick="CloseNewCollectionDialog">
+        <div class="modal-dialog" @onclick:stopPropagation="true">
+            <h2>Neue Sammlung erstellen</h2>
+            <div class="form-group">
+                <label>Name (max. 256 Zeichen)</label>
+                <input @bind="_newCollectionName" maxlength="256" placeholder="Sammlungsname…" class="form-input" />
+            </div>
+            <div class="form-group">
+                <label>Beschreibung</label>
+                <textarea @bind="_newCollectionDescription" placeholder="Beschreibung…" class="form-textarea" rows="4"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-primary" @onclick="CreateCollectionAsync">Erstellen</button>
+                <button class="btn-secondary" @onclick="CloseNewCollectionDialog">Abbrechen</button>
+            </div>
+        </div>
+    </div>
+}
+
+
+
+<style>
+    .sammlungen-page { margin: 0 auto; display: flex; flex-direction: column; height: 100%; }
+    .sammlungen-description { color: var(--color-text-muted); margin-bottom: 1.5rem; }
+    .sammlungen-toolbar {
+        display: flex;
+        gap: 0.75rem;
+        margin-bottom: 1.25rem;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+    .btn-primary {
+        padding: 0.5rem 1rem;
+        background: var(--color-accent, #4a90d9);
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        text-decoration: none;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary {
+        padding: 0.5rem 1rem;
+        background: var(--color-surface, #f0f0f0);
+        border: 1px solid var(--color-border, #ccc);
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        text-decoration: none;
+        color: var(--color-text, #333);
+    }
+    .btn-secondary:hover { background: var(--color-surface-hover, #e0e0e0); }
+    .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-danger {
+        padding: 0.5rem 1rem;
+        background: #dc3545;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+    }
+    .btn-danger:hover { background: #c82333; }
+    .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-sm { padding: 0.25rem 0.6rem; font-size: 0.8rem; }
+    .btn-download {
+        padding: 0.5rem 1rem;
+        background: #28a745;
+        color: #fff;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        text-decoration: none;
+        display: inline-block;
+    }
+    .btn-download:hover { background: #218838; }
+    .btn-disabled { opacity: 0.5; pointer-events: none; }
+    .sammlungen-grid {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+    }
+    .sammlungen-grid th {
+        background: var(--color-surface, #f8f8f8);
+        border-bottom: 2px solid var(--color-border, #ddd);
+        padding: 0.6rem 0.75rem;
+        text-align: left;
+        user-select: none;
+    }
+    .sammlungen-grid th.sortable { cursor: pointer; }
+    .sammlungen-grid th.sortable:hover { background: var(--color-surface-hover, #e8e8e8); }
+    .sammlungen-grid td {
+        padding: 0.55rem 0.75rem;
+        border-bottom: 1px solid var(--color-border, #eee);
+        vertical-align: top;
+    }
+    .sammlungen-grid tr:hover td { background: var(--color-surface-hover, #f0f0f0); }
+    .sammlungen-grid tr.selected td { background: var(--color-accent, #4a90d9); color: #fff; }
+    .col-description { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sort-indicator { font-size: 0.8em; margin-left: 4px; color: #888; }
+    .sort-indicator.active { color: var(--color-accent, #4a90d9); }
+    .sammlungen-empty { text-align: center; padding: 3rem; color: var(--color-text-muted); }
+    .sammlungen-empty-icon { font-size: 3rem; display: block; margin-bottom: 0.5rem; }
+    .error-message { background: #ffe0e0; border: 1px solid #dc3545; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem; color: #dc3545; }
+    .success-message { background: #e0ffe0; border: 1px solid #28a745; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem; color: #1a7a2e; }
+    .modal-overlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 2000;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .modal-dialog {
+        background: var(--color-surface, #fff);
+        border-radius: 8px;
+        padding: 2rem;
+        min-width: 420px;
+        max-width: 600px;
+        width: 90%;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+    }
+    .modal-dialog h2 { margin-top: 0; }
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; margin-bottom: 0.3rem; font-weight: 600; }
+    .form-input, .form-textarea {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--color-border, #ccc);
+        border-radius: 4px;
+        font-size: 0.95rem;
+        box-sizing: border-box;
+    }
+    .form-textarea { resize: vertical; }
+    .modal-actions { display: flex; gap: 0.75rem; margin-top: 1.25rem; justify-content: flex-end; }
+    .media-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 350px; overflow-y: auto; margin-bottom: 1rem; }
+    .media-list-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem; border: 1px solid var(--color-border, #eee); border-radius: 4px; }
+    .media-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
+    .expanded-row td { background: var(--color-surface, #f8f8f8); padding: 0.75rem !important; }
+    .expanded-empty { color: var(--color-text-muted, #888); padding: 0.5rem 0; }
+    .expanded-images { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .expanded-image-item {
+        position: relative;
+        width: 80px; height: 80px;
+        border: 2px solid transparent;
+        border-radius: 6px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: border-color 0.15s;
+    }
+    .expanded-image-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .expanded-image-item:hover { border-color: var(--color-accent, #4a90d9); }
+    .expanded-image-item.selected-media { border-color: #dc3545; }
+    .expanded-image-item.preview-active { border-color: var(--color-accent, #4a90d9); box-shadow: 0 0 0 2px var(--color-accent, #4a90d9); }
+    .check-mark {
+        position: absolute; top: 2px; right: 2px;
+        background: #dc3545; color: #fff;
+        border-radius: 50%; width: 20px; height: 20px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.7rem; pointer-events: none;
+    }
+</style>
+
+@code {
+    private List<CollectionDto> _collections = [];
+    private CollectionDto? _selectedCollection;
+    private bool _isLoading = true;
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    private string? _sortColumn;
+    private bool _sortAscending = true;
+
+    private bool _showNewCollectionDialog;
+    private string _newCollectionName = string.Empty;
+    private string _newCollectionDescription = string.Empty;
+
+    private Guid? _expandedCollectionId;
+    private bool _isLoadingMedia;
+    private List<Guid> _collectionMediaIds = [];
+    private HashSet<Guid> _selectedMediaIds = [];
+    private Guid? _previewMediaId;
+
+    private IEnumerable<CollectionDto> SortedCollections
+    {
+        get
+        {
+            IEnumerable<CollectionDto> items = _collections;
+            if (_sortColumn is not null)
+            {
+                items = (_sortColumn, _sortAscending) switch
+                {
+                    ("name", true)        => items.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase),
+                    ("name", false)       => items.OrderByDescending(c => c.Name, StringComparer.OrdinalIgnoreCase),
+                    ("description", true) => items.OrderBy(c => c.Description, StringComparer.OrdinalIgnoreCase),
+                    ("description", false)=> items.OrderByDescending(c => c.Description, StringComparer.OrdinalIgnoreCase),
+                    ("created", true)     => items.OrderBy(c => c.CreatedAt),
+                    ("created", false)    => items.OrderByDescending(c => c.CreatedAt),
+                    ("count", true)       => items.OrderBy(c => c.ImageCount),
+                    ("count", false)      => items.OrderByDescending(c => c.ImageCount),
+                    _                     => items
+                };
+            }
+            return items;
+        }
+    }
+
+    private void ToggleSort(string column)
+    {
+        if (_sortColumn == column)
+        {
+            if (!_sortAscending) { _sortColumn = null; _sortAscending = true; }
+            else _sortAscending = false;
+        }
+        else
+        {
+            _sortColumn = column;
+            _sortAscending = true;
+        }
+    }
+
+    private MarkupString SortIndicator(string column)
+    {
+        if (_sortColumn != column)
+            return new MarkupString("<span class=\"sort-indicator\">⇅</span>");
+        return _sortAscending
+            ? new MarkupString("<span class=\"sort-indicator active\">▲</span>")
+            : new MarkupString("<span class=\"sort-indicator active\">▼</span>");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCollectionsAsync();
+    }
+
+    private async Task LoadCollectionsAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+        try
+        {
+            _collections = await MediaApi.GetCollectionsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Fehler beim Laden der Sammlungen: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ToggleExpandCollection(CollectionDto collection)
+    {
+        _selectedMediaIds.Clear();
+        _previewMediaId = null;
+
+        if (_expandedCollectionId == collection.Id)
+        {
+            // Collapse
+            _expandedCollectionId = null;
+            _collectionMediaIds = [];
+            _selectedCollection = _selectedCollection?.Id == collection.Id ? null : collection;
+            return;
+        }
+
+        // Expand this collection
+        _selectedCollection = collection;
+        _expandedCollectionId = collection.Id;
+        _isLoadingMedia = true;
+        try
+        {
+            _collectionMediaIds = await MediaApi.GetCollectionMediaIdsAsync(collection.Id);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Fehler: {ex.Message}";
+            _collectionMediaIds = [];
+        }
+        finally
+        {
+            _isLoadingMedia = false;
+        }
+    }
+
+    private void SelectMediaForPreview(Guid mediaId)
+    {
+        // Toggle selection for bulk operations
+        if (!_selectedMediaIds.Remove(mediaId))
+            _selectedMediaIds.Add(mediaId);
+
+        // Always set as preview target
+        _previewMediaId = mediaId;
+    }
+
+    private void ShowNewCollectionDialog()
+    {
+        _newCollectionName = string.Empty;
+        _newCollectionDescription = string.Empty;
+        _showNewCollectionDialog = true;
+        _errorMessage = null;
+        _successMessage = null;
+    }
+
+    private void CloseNewCollectionDialog() => _showNewCollectionDialog = false;
+
+    private async Task CreateCollectionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newCollectionName))
+        {
+            _errorMessage = "Bitte geben Sie einen Namen ein.";
+            return;
+        }
+        try
+        {
+            await MediaApi.CreateCollectionAsync(_newCollectionName.Trim(), _newCollectionDescription.Trim());
+            _showNewCollectionDialog = false;
+            _successMessage = "Sammlung erfolgreich erstellt.";
+            await LoadCollectionsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Fehler beim Erstellen der Sammlung: {ex.Message}";
+        }
+    }
+
+    private async Task DeleteSelectedCollectionAsync()
+    {
+        if (_selectedCollection is null) return;
+        _errorMessage = null;
+        _successMessage = null;
+        try
+        {
+            await MediaApi.DeleteCollectionAsync(_selectedCollection.Id);
+            _successMessage = $"Sammlung \"{_selectedCollection.Name}\" gelöscht.";
+            _selectedCollection = null;
+            await LoadCollectionsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Fehler beim Löschen: {ex.Message}";
+        }
+    }
+
+    private async Task RemoveSelectedMediaAsync()
+    {
+        if (_selectedCollection is null || _selectedMediaIds.Count == 0) return;
+        _errorMessage = null;
+        _successMessage = null;
+        var removed = 0;
+        foreach (var mediaId in _selectedMediaIds.ToList())
+        {
+            try
+            {
+                await MediaApi.RemoveMediaFromCollectionAsync(_selectedCollection.Id, mediaId);
+                _collectionMediaIds.Remove(mediaId);
+                removed++;
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = $"Fehler beim Entfernen: {ex.Message}";
+            }
+        }
+        _selectedMediaIds.Clear();
+        if (removed > 0)
+        {
+            _successMessage = $"{removed} Bild(er) aus Sammlung entfernt.";
+            await LoadCollectionsAsync();
+            _selectedCollection = _collections.FirstOrDefault(c => c.Id == _selectedCollection?.Id);
+        }
+    }
+}
