@@ -84,7 +84,7 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     const string bucket = "media";
     await EnsureBucketExistsAsync(minio, bucket);
 
-    var mediaId = Guid.NewGuid();
+    var mediaId = Guid.TryParse(form["mediaId"].ToString(), out var parsedId) ? parsedId : Guid.NewGuid();
     var storageKey = $"{mediaId}/{file.FileName}";
 
     logger.LogInformation("[PIPELINE] Schritt 2/5: MinIO-Upload starten - MediaId={MediaId}, Bucket={Bucket}, Key={Key}",

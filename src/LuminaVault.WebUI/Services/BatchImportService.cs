@@ -190,10 +190,16 @@ public sealed class BatchImportService(
                 await using var stream = File.OpenRead(filePath);
                 var fileName = Path.GetFileName(filePath);
                 var title = Path.GetFileNameWithoutExtension(filePath);
-                var result = await mediaApi.UploadMediaAsync(stream, fileName, contentType, title, ct);
+
+                // Pre-generate the MediaId and register it with the tracker BEFORE the
+                // upload so that the NATS PipelineComplete event (published at the end of
+                // the import endpoint) is not missed due to a race condition.
+                var mediaId = Guid.NewGuid();
+                pipelineTracker.Track(mediaId);
+
+                var result = await mediaApi.UploadMediaAsync(stream, fileName, contentType, title, ct, mediaId);
 
                 sw.Stop();
-                pipelineTracker.Track(result.Id);
                 lock (_importMilliseconds)
                     _importMilliseconds.Add(sw.Elapsed.TotalMilliseconds);
                 ImportedCount++;

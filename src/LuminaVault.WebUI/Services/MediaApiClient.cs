@@ -24,13 +24,15 @@ public class MediaApiClient(HttpClient httpClient)
     /// <summary>
     /// Uploads a media file (photo or video) to the import service.
     /// </summary>
-    public async Task<ImportResult> UploadMediaAsync(Stream fileStream, string fileName, string contentType, string title, CancellationToken cancellationToken = default)
+    public async Task<ImportResult> UploadMediaAsync(Stream fileStream, string fileName, string contentType, string title, CancellationToken cancellationToken = default, Guid? mediaId = null)
     {
         using var content = new MultipartFormDataContent();
         using var streamContent = new StreamContent(fileStream);
         streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
         content.Add(streamContent, "file", fileName);
         content.Add(new StringContent(title), "title");
+        if (mediaId.HasValue)
+            content.Add(new StringContent(mediaId.Value.ToString()), "mediaId");
 
         var response = await httpClient.PostAsync("/api/media/import", content, cancellationToken);
         response.EnsureSuccessStatusCode();
