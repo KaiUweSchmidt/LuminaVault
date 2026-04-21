@@ -8,6 +8,9 @@ using SixLabors.ImageSharp.Processing;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddNatsClient();
+
+builder.Services.AddHostedService<NatsThumbnailSubscriber>();
 
 builder.Services.AddSingleton<IMinioClient>(sp =>
 {

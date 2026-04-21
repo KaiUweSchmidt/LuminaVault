@@ -1,10 +1,12 @@
 using LuminaVault.ObjectRecognition;
+using Microsoft.Extensions.Http.Resilience;
 using Minio;
 using Minio.DataModel.Args;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddNatsClient();
 
 builder.Services.AddSingleton<IMinioClient>(sp =>
 {
@@ -24,11 +26,20 @@ builder.Services.AddSingleton<YoloObjectDetector>(sp =>
 
 builder.Services.AddHttpClient<FaceRecognitionClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:FaceRecognition"]
-        ?? "http://face-recognition:8080"));
+        ?? "http://face-recognition:8080"))
+    .ConfigureAdditionalHttpMessageHandlers((_, _) => { })
+    .AddStandardResilienceHandler(options =>
+    {
+        options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(5);
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(10);
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
+    });
 
 builder.Services.AddHttpClient<MetadataStorageClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:MetadataStorage"]
         ?? "http://metadata-storage:8080"));
+
+builder.Services.AddHostedService<NatsObjectRecognitionSubscriber>();
 
 var app = builder.Build();
 

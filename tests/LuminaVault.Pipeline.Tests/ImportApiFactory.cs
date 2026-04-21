@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Minio;
+using NATS.Client.Core;
 using NSubstitute;
 
 namespace LuminaVault.Pipeline.Tests;
@@ -16,6 +17,7 @@ internal sealed class ImportApiFactory : WebApplicationFactory<Program>
     private readonly DbConnection _connection;
 
     public IMinioClient MinioClient { get; } = Substitute.For<IMinioClient>();
+    public INatsConnection NatsConnection { get; } = Substitute.For<INatsConnection>();
 
     public ImportApiFactory()
     {
@@ -65,6 +67,14 @@ internal sealed class ImportApiFactory : WebApplicationFactory<Program>
             geocodingStub.GetLocationNameAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
                 .Returns((string?)null);
             services.AddSingleton(geocodingStub);
+
+            // Replace NATS connection with a no-op stub so tests don't need a running NATS server
+            var natsDescriptors = services.Where(
+                d => d.ServiceType == typeof(INatsConnection)).ToList();
+            foreach (var d in natsDescriptors)
+                services.Remove(d);
+
+            services.AddSingleton(NatsConnection);
         });
     }
 

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Components.Server.Circuits;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddNatsClient();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -14,6 +15,10 @@ builder.Services.AddRazorComponents()
 builder.Services.Configure<ImportSettings>(builder.Configuration.GetSection(ImportSettings.SectionName));
 
 builder.Services.AddScoped<GalleryUserSettingsService>();
+
+// Pipeline completion tracking via NATS
+builder.Services.AddSingleton<PipelineCompletionTracker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PipelineCompletionTracker>());
 
 // Batch import: singleton state + scoped circuit handler for pause-on-disconnect
 builder.Services.AddSingleton<BatchImportService>();
