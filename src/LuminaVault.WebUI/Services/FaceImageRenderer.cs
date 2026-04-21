@@ -34,7 +34,7 @@ public static class FaceImageRenderer
 
     private static void DrawBoxes(Image<Rgba32> image, IReadOnlyList<Face> faces)
     {
-        var font = SystemFonts.CreateFont("Arial", Math.Max(16, image.Width / 60f), FontStyle.Bold);
+        var font = SystemFonts.CreateFont("DejaVu Sans", Math.Max(16, image.Width / 60f), FontStyle.Bold);
 
         image.Mutate(ctx =>
         {
@@ -54,7 +54,7 @@ public static class FaceImageRenderer
 
                 ctx.Draw(pen, new RectangleF(x, y, w, h));
 
-                var label = $"Gesicht {i + 1}";
+                var label = string.IsNullOrWhiteSpace(face.Name) ? $"Gesicht {i + 1}" : face.Name;
                 var labelY = Math.Max(0, y - font.Size - 4);
                 ctx.DrawText(label, font, color, new PointF(x, labelY));
             }

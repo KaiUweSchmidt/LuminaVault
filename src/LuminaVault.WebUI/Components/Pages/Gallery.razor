@@ -1,6 +1,7 @@
 @page "/gallery"
 @using LuminaVault.WebUI.Services
 @inject MediaApiClient MediaApi
+@inject GalleryUserSettingsService GallerySettings
 @rendermode InteractiveServer
 
 <div class="gallery-page">
@@ -147,6 +148,12 @@
 
     @if (_facesVisible && _faces.Count > 0)
     {
+        <datalist id="face-names-list">
+            @foreach (var n in _allFaceNames)
+            {
+                <option value="@n" />
+            }
+        </datalist>
         <div class="similar-persons-panel">
             <div class="similar-persons-header">
                 <h3>Erkannte Gesichter in "@_contextMenuItem?.FileName"</h3>
@@ -159,10 +166,10 @@
                     var faceNumber = i + 1;
                     <div class="face-item">
                         <div class="face-frame">
-                            <span class="face-frame-label">Gesicht @faceNumber</span>
+                            <span class="face-frame-label">@(string.IsNullOrWhiteSpace(face.Name) ? $"Gesicht {faceNumber}" : face.Name)</span>
                         </div>
                         <div class="face-edit">
-                            <input @bind="_faceNameInputs[face.Id]" placeholder="Name vergeben..." />
+                            <input list="face-names-list" @bind="_faceNameInputs[face.Id]" placeholder="Name vergeben..." />
                             <button @onclick="() => SaveFaceNameAsync(face.Id)">Speichern</button>
                         </div>
                     </div>
@@ -299,6 +306,32 @@
         _selectedItem = item;
         _previewUrl = $"/proxy/media/{item.Id}";
         _isLoadingPreview = false;
+
+        // Close the faces panel and clear cached data for the previous item
+        _facesVisible = false;
+        _faces = [];
+        _faceNameInputs = [];
+        _cachedImageBytes = null;
+        _annotatedPreviewUrl = null;
+
+        // When "Immer erkannte Gesichter mit Rahmen versehen" is enabled, auto-render bboxes
+        if (GallerySettings.AlwaysShowFaceBboxes)
+        {
+            try
+            {
+                var facesForItem = await MediaApi.GetFacesAsync(item.Id);
+                if (facesForItem.Count > 0)
+                {
+                    _cachedImageBytes = await MediaApi.DownloadImageBytesAsync(item.Id);
+                    _annotatedPreviewUrl = FaceImageRenderer.Render(_cachedImageBytes, facesForItem);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log the error but keep the plain preview as fallback
+                _errorMessage = ex.Message;
+            }
+        }
     }
 
     private bool _contextMenuVisible;
@@ -314,6 +347,8 @@
     private List<Face> _faces = [];
     private Dictionary<Guid, string?> _faceNameInputs = [];
     private string? _annotatedPreviewUrl;
+    private byte[]? _cachedImageBytes;
+    private List<string> _allFaceNames = [];
 
     private void ShowContextMenu(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, ImportedMediaItem item)
     {
@@ -358,15 +393,17 @@
         _facesVisible = true;
         _similarPersonsVisible = false;
         _annotatedPreviewUrl = null;
+        _cachedImageBytes = null;
         try
         {
             _faces = await MediaApi.GetFacesAsync(_contextMenuItem.Id);
             _faceNameInputs = _faces.ToDictionary(f => f.Id, f => f.Name);
+            _allFaceNames = await MediaApi.GetFaceNamesAsync();
 
             if (_faces.Count > 0 && _contextMenuItem is not null)
             {
-                var imageBytes = await MediaApi.DownloadImageBytesAsync(_contextMenuItem.Id);
-                _annotatedPreviewUrl = FaceImageRenderer.Render(imageBytes, _faces);
+                _cachedImageBytes = await MediaApi.DownloadImageBytesAsync(_contextMenuItem.Id);
+                _annotatedPreviewUrl = FaceImageRenderer.Render(_cachedImageBytes, _faces);
             }
         }
         catch (Exception ex)
@@ -389,6 +426,14 @@
                 var idx = _faces.IndexOf(face);
                 _faces[idx] = face with { Name = name };
             }
+
+            // Refresh the autocomplete list if a new name was entered
+            if (!string.IsNullOrWhiteSpace(name) && !_allFaceNames.Contains(name, StringComparer.OrdinalIgnoreCase))
+                _allFaceNames.Add(name);
+
+            // Regenerate the annotated preview to reflect the updated label
+            if (_cachedImageBytes is not null && _faces.Count > 0)
+                _annotatedPreviewUrl = FaceImageRenderer.Render(_cachedImageBytes, _faces);
         }
         catch (Exception ex) { _errorMessage = ex.Message; }
     }
@@ -405,6 +450,7 @@
         _faces = [];
         _faceNameInputs = [];
         _annotatedPreviewUrl = null;
+        _cachedImageBytes = null;
     }
 
     private static string FormatFileSize(long bytes) => bytes switch

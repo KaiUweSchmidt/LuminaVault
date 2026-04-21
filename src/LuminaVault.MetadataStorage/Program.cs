@@ -148,6 +148,17 @@ app.MapGet("/faces/similar/{mediaId:guid}", async (Guid mediaId, MetadataDbConte
     return Results.Ok(results);
 });
 
+app.MapGet("/faces/names", async (MetadataDbContext db) =>
+{
+    var names = await db.Faces
+        .Where(f => !string.IsNullOrEmpty(f.Name))
+        .Select(f => f.Name!)
+        .Distinct()
+        .OrderBy(n => n)
+        .ToListAsync();
+    return Results.Ok(names);
+});
+
 app.MapDelete("/admin/purge-all", async (MetadataDbContext db, ILogger<Program> logger) =>
 {
     var faceCount = await db.Faces.ExecuteDeleteAsync();

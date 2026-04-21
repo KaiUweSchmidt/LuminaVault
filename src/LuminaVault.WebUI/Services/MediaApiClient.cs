@@ -81,6 +81,9 @@ public class MediaApiClient(HttpClient httpClient)
         }
     }
 
+    public async Task<List<string>> GetFaceNamesAsync() =>
+        await httpClient.GetFromJsonAsync<List<string>>("/api/metadata/faces/names") ?? [];
+
     public async Task<List<Face>> GetFacesAsync(Guid mediaId) =>
         await httpClient.GetFromJsonAsync<List<Face>>($"/api/metadata/faces/{mediaId}") ?? [];
 
