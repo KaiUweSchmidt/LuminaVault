@@ -1,6 +1,0 @@
-@LuminaVault.AiTagging_HostAddress = http://localhost:5096
-
-GET {{LuminaVault.AiTagging_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###

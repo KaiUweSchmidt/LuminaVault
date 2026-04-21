@@ -11,13 +11,7 @@ public record RecognizeResponse(
     bool PersonDetected,
     List<string> DetectedObjects);
 
-public record OllamaGenerateRequest(
-    string Model,
-    string Prompt,
-    string[] Images,
-    bool Stream,
-    string? Format = null);
-
-public record OllamaGenerateResponse(string Response);
-
-public record OllamaDetectionResult(List<string>? Objects, bool? PersonDetected);
+/// <summary>
+/// Result from the YOLO object detector containing detected labels and a person flag.
+/// </summary>
+public record YoloDetectionResult(List<string> Objects, bool PersonDetected);
