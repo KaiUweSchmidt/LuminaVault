@@ -37,14 +37,15 @@ app.MapPost("/analyze", async (AnalyzeRequest request, AiTaggingDbContext db, IL
     await db.TaggingResults.AddAsync(result);
     await db.SaveChangesAsync();
     logger.LogInformation("[PIPELINE:AiTag] POST /analyze - Ergebnis gespeichert: TaggingId={TaggingId} für MediaId={MediaId}",
-        result.Id, result.MediaId);
+        result.Id, request.MediaId);
     return Results.Ok(result);
 });
 
 app.MapPost("/tags", async (ObjectTagsRequest request, AiTaggingDbContext db, ILogger<Program> logger) =>
 {
+    var sanitizedTags = string.Join(", ", request.Tags.Select(t => t.ReplaceLineEndings(" ")));
     logger.LogInformation("[PIPELINE:AiTag] POST /tags - Erkannte Objekte speichern für MediaId={MediaId}: [{Tags}]",
-        request.MediaId, string.Join(", ", request.Tags));
+        request.MediaId, sanitizedTags);
     var result = new TaggingResult
     {
         Id = Guid.NewGuid(),
