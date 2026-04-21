@@ -133,6 +133,7 @@ public record MediaItem(
     string[] Tags,
     double? GpsLatitude,
     double? GpsLongitude,
+    string? GpsLocation,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
     int? PersonCount = null);

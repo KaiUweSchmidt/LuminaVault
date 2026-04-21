@@ -32,6 +32,12 @@ builder.Services.AddHttpClient<MetadataStorageClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:MetadataStorage"]
         ?? "http://metadata-storage:8080"));
 
+builder.Services.AddHttpClient<IGeocodingService, NominatimGeocodingService>(client =>
+{
+    // Nominatim requires a meaningful User-Agent header per their usage policy
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("LuminaVault/1.0 (https://github.com/KaiUweSchmidt/LuminaVault)");
+});
+
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
@@ -46,7 +52,8 @@ using (var scope = app.Services.CreateScope())
 
 app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     MediaImportDbContext db, ThumbnailServiceClient thumbnails,
-    ObjectRecognitionServiceClient recognition, MetadataStorageClient metadataStorage, ILogger<Program> logger) =>
+    ObjectRecognitionServiceClient recognition, MetadataStorageClient metadataStorage,
+    IGeocodingService geocoding, ILogger<Program> logger) =>
 {
     logger.LogInformation("[PIPELINE] ===== Import gestartet =====");
 
@@ -108,10 +115,46 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     await db.SaveChangesAsync();
     logger.LogInformation("[PIPELINE] Schritt 3/5: DB-Speicherung abgeschlossen");
 
+    // Extract GPS coordinates and location name from EXIF (images only)
+    double? gpsLatitude = null;
+    double? gpsLongitude = null;
+    string? gpsLocation = null;
+
+    if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+    {
+        try
+        {
+            await using var exifStream = file.OpenReadStream();
+            var gpsCoords = GpsExifExtractor.ExtractGps(exifStream);
+            if (gpsCoords.HasValue)
+            {
+                gpsLatitude = gpsCoords.Value.Latitude;
+                gpsLongitude = gpsCoords.Value.Longitude;
+                logger.LogInformation("[PIPELINE] GPS-Koordinaten extrahiert: ({Lat}, {Lon}) für MediaId={MediaId}",
+                    gpsLatitude, gpsLongitude, mediaId);
+
+                gpsLocation = await geocoding.GetLocationNameAsync(gpsCoords.Value.Latitude, gpsCoords.Value.Longitude);
+                if (gpsLocation is not null)
+                    logger.LogInformation("[PIPELINE] GPS-Ort ermittelt: '{Location}' für MediaId={MediaId}", gpsLocation, mediaId);
+                else
+                    logger.LogInformation("[PIPELINE] GPS-Ort konnte nicht ermittelt werden für MediaId={MediaId}", mediaId);
+            }
+            else
+            {
+                logger.LogInformation("[PIPELINE] Keine GPS-Daten in EXIF gefunden für MediaId={MediaId}", mediaId);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[PIPELINE] GPS-Extraktion fehlgeschlagen für MediaId={MediaId}", mediaId);
+        }
+    }
+
     // Create metadata entry in MetadataStorage service
     try
     {
-        await metadataStorage.CreateMetadataAsync(mediaId, title, file.FileName, file.ContentType);
+        await metadataStorage.CreateMetadataAsync(mediaId, title, file.FileName, file.ContentType,
+            gpsLatitude, gpsLongitude, gpsLocation);
         logger.LogInformation("[PIPELINE] MetadataStorage-Eintrag erstellt für MediaId={MediaId}", mediaId);
     }
     catch (Exception ex)

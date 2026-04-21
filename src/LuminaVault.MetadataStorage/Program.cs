@@ -46,6 +46,7 @@ app.MapPost("/media", async (CreateMediaMetadataRequest request, MetadataDbConte
         Tags = request.Tags,
         GpsLatitude = request.GpsLatitude,
         GpsLongitude = request.GpsLongitude,
+        GpsLocation = request.GpsLocation,
         CreatedAt = DateTimeOffset.UtcNow
     };
     await db.MediaMetadata.AddAsync(metadata);

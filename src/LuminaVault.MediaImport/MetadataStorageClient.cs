@@ -5,7 +5,8 @@ namespace LuminaVault.MediaImport;
 /// </summary>
 public class MetadataStorageClient(HttpClient httpClient)
 {
-    public async Task CreateMetadataAsync(Guid mediaId, string title, string fileName, string contentType)
+    public async Task CreateMetadataAsync(Guid mediaId, string title, string fileName, string contentType,
+        double? gpsLatitude = null, double? gpsLongitude = null, string? gpsLocation = null)
     {
         var request = new
         {
@@ -13,8 +14,9 @@ public class MetadataStorageClient(HttpClient httpClient)
             Title = title,
             Description = $"Imported file: {fileName}",
             Tags = new[] { contentType.Split('/')[0] },
-            GpsLatitude = (double?)null,
-            GpsLongitude = (double?)null
+            GpsLatitude = gpsLatitude,
+            GpsLongitude = gpsLongitude,
+            GpsLocation = gpsLocation
         };
 
         var response = await httpClient.PostAsJsonAsync("/media", request);

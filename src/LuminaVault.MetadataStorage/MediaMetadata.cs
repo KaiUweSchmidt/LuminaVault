@@ -8,6 +8,7 @@ public class MediaMetadata
     public string[] Tags { get; set; } = [];
     public double? GpsLatitude { get; set; }
     public double? GpsLongitude { get; set; }
+    public string? GpsLocation { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
     public int? PersonCount { get; set; }
@@ -32,7 +33,8 @@ public record CreateMediaMetadataRequest(
     string Description,
     string[] Tags,
     double? GpsLatitude,
-    double? GpsLongitude);
+    double? GpsLongitude,
+    string? GpsLocation = null);
 
 public record UpdateMediaMetadataRequest(
     string? Title,
