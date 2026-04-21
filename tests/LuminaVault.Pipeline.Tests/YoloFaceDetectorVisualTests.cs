@@ -1,6 +1,6 @@
-extern alias ObjRec;
+extern alias FaceRec;
 
-using ObjRec::LuminaVault.ObjectRecognition;
+using FaceRec::LuminaVault.FaceRecognition;
 using Microsoft.Extensions.Logging;
 using SixLabors.Fonts;
 using SixLabors.ImageSharp;

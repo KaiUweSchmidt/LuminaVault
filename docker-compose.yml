@@ -49,17 +49,6 @@ services:
       postgres:
         condition: service_healthy
 
-  ai-tagging:
-    build:
-      context: .
-      dockerfile: src/LuminaVault.AiTagging/Dockerfile
-    environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__luminavault-metadata: "Host=postgres;Database=luminavault-metadata;Username=luminavault;Password=luminavault"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   vector-search:
     build:
       context: .
@@ -88,6 +77,28 @@ services:
     build:
       context: .
       dockerfile: src/LuminaVault.ObjectRecognition/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: minioadmin
+      Minio__SecretKey: minioadmin
+      Services__Ollama: http://ollama:11434
+      Services__FaceRecognition: http://face-recognition:8080
+      Services__MetadataStorage: http://metadata-storage:8080
+    depends_on:
+      minio:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      face-recognition:
+        condition: service_started
+      metadata-storage:
+        condition: service_started
+
+  face-recognition:
+    build:
+      context: .
+      dockerfile: src/LuminaVault.FaceRecognition/Dockerfile
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       Minio__Endpoint: minio:9000
@@ -133,10 +144,10 @@ services:
     depends_on:
       - media-import
       - metadata-storage
-      - ai-tagging
       - vector-search
       - thumbnail-generation
       - object-recognition
+      - face-recognition
 
   webui:
     build:

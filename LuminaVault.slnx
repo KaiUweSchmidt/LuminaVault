@@ -1,7 +1,9 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/LuminaVault.AiTagging/LuminaVault.AiTagging.csproj" />
     <Project Path="src/LuminaVault.ApiGateway/LuminaVault.ApiGateway.csproj" />
+    <Project Path="src/LuminaVault.FaceRecognition/LuminaVault.FaceRecognition.csproj">
+      <Build Solution="Debug|*" Project="false" />
+    </Project>
     <Project Path="src/LuminaVault.MediaImport/LuminaVault.MediaImport.csproj" />
     <Project Path="src/LuminaVault.MetadataStorage/LuminaVault.MetadataStorage.csproj" />
     <Project Path="src/LuminaVault.ObjectRecognition/LuminaVault.ObjectRecognition.csproj">

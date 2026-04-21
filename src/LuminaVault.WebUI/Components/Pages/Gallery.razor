@@ -44,6 +44,9 @@
                             <th class="col-gps sortable" @onclick='() => ToggleSort("gps")'>
                                 GPS Standort @SortIndicator("gps")
                             </th>
+                            <th class="col-tags sortable" @onclick='() => ToggleSort("tags")'>
+                                Tags @SortIndicator("tags")
+                            </th>
                         </tr>
                         <tr class="filter-row">
                             <th></th>
@@ -75,6 +78,15 @@
                                     }
                                 </select>
                             </th>
+                            <th>
+                                <select class="filter-select" @bind="_filterTag">
+                                    <option value="">Alle</option>
+                                    @foreach (var v in DistinctTags)
+                                    {
+                                        <option value="@v">@v</option>
+                                    }
+                                </select>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -99,6 +111,9 @@
                                 <td class="col-size">@FormatFileSize(item.FileSizeBytes)</td>
                                 <td class="col-type">@item.ContentType</td>
                                 <td class="col-gps">@FormatGpsLocation(item)</td>
+                                <td class="col-tags">
+                                    <span class="tag-cell" title="@string.Join(", ", item.Tags)">@(item.Tags.Length > 0 ? item.Tags[0] : "–")</span>
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -338,6 +353,26 @@
         background: #fff;
         font-size: 0.85em;
     }
+    .col-tags { min-width: 100px; }
+    .tag-cell {
+        cursor: default;
+        position: relative;
+    }
+    tr.selected .tag-cell[title]:hover::after {
+        content: attr(title);
+        position: absolute;
+        left: 0;
+        top: 100%;
+        z-index: 100;
+        background: #1a1a2e;
+        color: #f0f0f0;
+        padding: 0.4rem 0.6rem;
+        border-radius: 4px;
+        white-space: pre-wrap;
+        max-width: 300px;
+        font-size: 0.85em;
+        box-shadow: 2px 4px 12px rgba(0,0,0,0.4);
+    }
 </style>
 
 @code {
@@ -359,6 +394,7 @@
     private string _filterDate = string.Empty;
     private string _filterType = string.Empty;
     private string _filterGps = string.Empty;
+    private string _filterTag = string.Empty;
 
     private IEnumerable<MediaItem> FilteredAndSortedItems
     {
@@ -375,6 +411,9 @@
             if (!string.IsNullOrWhiteSpace(_filterGps))
                 items = items.Where(i => FormatGpsLocation(i) == _filterGps);
 
+            if (!string.IsNullOrWhiteSpace(_filterTag))
+                items = items.Where(i => i.Tags.Contains(_filterTag, StringComparer.OrdinalIgnoreCase));
+
             if (_sortColumn is not null)
             {
                 items = (_sortColumn, _sortAscending) switch
@@ -387,6 +426,8 @@
                     ("type", false) => items.OrderByDescending(i => i.ContentType, StringComparer.OrdinalIgnoreCase),
                     ("gps", true)   => items.OrderBy(i => FormatGpsLocation(i), StringComparer.OrdinalIgnoreCase),
                     ("gps", false)  => items.OrderByDescending(i => FormatGpsLocation(i), StringComparer.OrdinalIgnoreCase),
+                    ("tags", true)  => items.OrderBy(i => i.Tags.FirstOrDefault() ?? string.Empty, StringComparer.OrdinalIgnoreCase),
+                    ("tags", false) => items.OrderByDescending(i => i.Tags.FirstOrDefault() ?? string.Empty, StringComparer.OrdinalIgnoreCase),
                     _ => items
                 };
             }
@@ -407,6 +448,10 @@
         _mediaItems.Select(i => FormatGpsLocation(i))
             .Where(l => l != "–")
             .Distinct().Order().ToList();
+
+    private IReadOnlyList<string> DistinctTags =>
+        _mediaItems.SelectMany(i => i.Tags)
+            .Distinct(StringComparer.OrdinalIgnoreCase).Order().ToList();
 
     private void ToggleSort(string column)
     {

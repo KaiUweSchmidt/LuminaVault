@@ -8,16 +8,10 @@ public record RecognizeRequest(
 
 public record RecognizeResponse(
     Guid MediaId,
-    int PersonCount,
-    List<FaceInfo> Faces);
+    bool PersonDetected,
+    List<string> DetectedObjects);
 
-public record FaceInfo(string FaceDescription, double BboxX, double BboxY, double BboxWidth, double BboxHeight);
-
-public record OllamaGenerateRequest(
-    string Model,
-    string Prompt,
-    string[] Images,
-    bool Stream,
-    string? Format = null);
-
-public record OllamaGenerateResponse(string Response);
+/// <summary>
+/// Result from the YOLO object detector containing detected labels and a person flag.
+/// </summary>
+public record YoloDetectionResult(List<string> Objects, bool PersonDetected);

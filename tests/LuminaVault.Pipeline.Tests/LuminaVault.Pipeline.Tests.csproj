@@ -21,6 +21,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\LuminaVault.MediaImport\LuminaVault.MediaImport.csproj" />
+    <ProjectReference Include="..\..\src\LuminaVault.FaceRecognition\LuminaVault.FaceRecognition.csproj">
+      <Aliases>FaceRec</Aliases>
+    </ProjectReference>
     <ProjectReference Include="..\..\src\LuminaVault.ObjectRecognition\LuminaVault.ObjectRecognition.csproj">
       <Aliases>ObjRec</Aliases>
     </ProjectReference>
