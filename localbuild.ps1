@@ -14,6 +14,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "`n[4/5] Starting containers..." -ForegroundColor Yellow
+$env:HOST_MEDIA_PATH = "C:\Dev\Bilder"
+Write-Host "HOST_MEDIA_PATH = $env:HOST_MEDIA_PATH" -ForegroundColor Gray
 docker compose up -d
 
 Write-Host "`n[5/5] Streaming logs (Ctrl+C to stop)..." -ForegroundColor Green

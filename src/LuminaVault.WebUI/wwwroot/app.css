@@ -113,6 +113,11 @@ html, body {
     text-align: center;
 }
 
+.nav-menu .nav-link-sub {
+    padding-left: 2.25rem;
+    font-size: 0.84rem;
+}
+
 /* ===== Landing Page ===== */
 .landing {
     max-width: 960px;
@@ -450,6 +455,59 @@ html, body {
     z-index: 1;
 }
 
+.media-grid thead th.sortable {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.media-grid thead th.sortable:hover {
+    color: var(--color-text);
+    background: var(--color-surface-hover);
+}
+
+.sort-indicator {
+    font-size: 0.7rem;
+    opacity: 0.3;
+    margin-left: 0.25rem;
+}
+
+.sort-indicator.active {
+    opacity: 1;
+    color: var(--color-accent);
+}
+
+.media-grid .filter-row th {
+    padding: 0.25rem 0.5rem 0.5rem;
+    background: var(--color-surface);
+    border-bottom: 2px solid var(--color-border);
+    top: 2.5rem;
+    z-index: 1;
+    position: sticky;
+}
+
+.filter-input {
+    width: 100%;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.25rem;
+    background: var(--color-bg);
+    color: var(--color-text);
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+
+.filter-input:focus {
+    border-color: var(--color-accent);
+}
+
+.filter-input::placeholder {
+    color: var(--color-text-muted);
+    opacity: 0.6;
+}
+
 .media-grid tbody tr {
     transition: background 0.12s;
     cursor: pointer;
@@ -734,6 +792,95 @@ html, body {
 
 .batch-dir-input:disabled {
     opacity: 0.5;
+}
+
+.btn-browse {
+    padding: 0.75rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.btn-browse:hover {
+    background: var(--color-surface-hover);
+    border-color: var(--color-accent);
+}
+
+.dir-browser {
+    margin-top: 0.75rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    max-height: 20rem;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.dir-browser-header {
+    padding: 0.5rem 0.75rem;
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    font-family: monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+}
+
+.dir-browser-list {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    outline: none;
+    scroll-behavior: smooth;
+}
+
+.dir-browser-item {
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.1s;
+    border-bottom: 1px solid var(--color-border);
+    user-select: none;
+}
+
+.dir-browser-item:hover {
+    background: var(--color-surface-hover);
+}
+
+.dir-browser-item.dir-browser-selected {
+    background: var(--color-accent);
+    color: #fff;
+}
+
+.dir-browser-up {
+    color: var(--color-text-muted);
+}
+
+.dir-browser-up.dir-browser-selected {
+    color: #fff;
+}
+
+.dir-browser-empty {
+    padding: 1rem 0.75rem;
+    color: var(--color-text-muted);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.dir-browser-actions {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--color-border);
+    background: var(--color-bg);
+    flex-shrink: 0;
 }
 
 .batch-status-card {

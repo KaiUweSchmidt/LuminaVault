@@ -119,11 +119,17 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     double? gpsLatitude = null;
     double? gpsLongitude = null;
     string? gpsLocation = null;
+    DateTimeOffset? capturedAt = null;
 
     if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
     {
         try
         {
+            await using var dateStream = file.OpenReadStream();
+            capturedAt = ExifDateExtractor.ExtractDateTaken(dateStream);
+            if (capturedAt.HasValue)
+                logger.LogInformation("[PIPELINE] Aufnahmedatum extrahiert: {CapturedAt} für MediaId={MediaId}", capturedAt, mediaId);
+
             await using var exifStream = file.OpenReadStream();
             var gpsCoords = GpsExifExtractor.ExtractGps(exifStream);
             if (gpsCoords.HasValue)
@@ -154,7 +160,7 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     try
     {
         await metadataStorage.CreateMetadataAsync(mediaId, title, file.FileName, file.ContentType,
-            file.Length, gpsLatitude, gpsLongitude, gpsLocation);
+            file.Length, gpsLatitude, gpsLongitude, gpsLocation, capturedAt);
         logger.LogInformation("[PIPELINE] MetadataStorage-Eintrag erstellt für MediaId={MediaId}", mediaId);
     }
     catch (Exception ex)
@@ -162,14 +168,16 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
         logger.LogWarning(ex, "[PIPELINE] MetadataStorage-Eintrag FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
     }
 
-    // Generate thumbnail
-    if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+    // Generate thumbnail (images and videos)
+    var isImageOrVideo = file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+                      || file.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
+    if (isImageOrVideo)
     {
         logger.LogInformation("[PIPELINE] Schritt 4/5: Thumbnail-Generierung starten - MediaId={MediaId}", mediaId);
         try
         {
             sw.Restart();
-            await thumbnails.RequestThumbnailAsync(mediaId, bucket, storageKey);
+            await thumbnails.RequestThumbnailAsync(mediaId, bucket, storageKey, file.ContentType);
             sw.Stop();
             logger.LogInformation("[PIPELINE] Schritt 4/5: Thumbnail-Generierung abgeschlossen in {ElapsedMs}ms", sw.ElapsedMilliseconds);
         }
@@ -177,7 +185,15 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
         {
             logger.LogWarning(ex, "[PIPELINE] Schritt 4/5: Thumbnail-Generierung FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
         }
+    }
+    else
+    {
+        logger.LogInformation("[PIPELINE] Schritt 4/5: Thumbnail übersprungen (kein Bild/Video)");
+    }
 
+    // Object recognition (images only)
+    if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+    {
         logger.LogInformation("[PIPELINE] Schritt 5/5: ObjectRecognition starten - MediaId={MediaId}", mediaId);
         try
         {
@@ -193,7 +209,6 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     }
     else
     {
-        logger.LogInformation("[PIPELINE] Schritt 4/5: Thumbnail übersprungen (kein Bild)");
         logger.LogInformation("[PIPELINE] Schritt 5/5: ObjectRecognition übersprungen (kein Bild)");
     }
 

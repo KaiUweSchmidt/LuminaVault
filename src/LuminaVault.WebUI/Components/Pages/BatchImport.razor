@@ -20,16 +20,67 @@
                 <input id="dirInput"
                        class="batch-dir-input"
                        type="text"
-                       placeholder="/media/fotos"
+                       placeholder="/media/import"
                        @bind="_directoryPath"
                        @bind:event="oninput"
                        disabled="@_isStarting" />
+                <button class="btn-browse"
+                        @onclick="ToggleBrowser"
+                        disabled="@_isStarting"
+                        title="Verzeichnis durchsuchen">
+                    📁
+                </button>
                 <button class="btn-upload"
                         @onclick="StartImportAsync"
                         disabled="@(string.IsNullOrWhiteSpace(_directoryPath) || _isStarting)">
                     @(_isStarting ? "Wird gescannt..." : "Import starten")
                 </button>
             </div>
+
+            @if (_showBrowser)
+            {
+                <div class="dir-browser" @onkeydown="HandleBrowserKeyDown">
+                    <div class="dir-browser-header">
+                        <span class="dir-browser-path">@_browsePath</span>
+                    </div>
+                    <div class="dir-browser-list" tabindex="0" @ref="_browserListRef">
+                        @if (_browsePath != _browseRoot)
+                        {
+                            <div class="dir-browser-item dir-browser-up @(_browseSelectedIndex == -1 ? "dir-browser-selected" : "")"
+                                 @onclick="BrowseUp"
+                                 @ondblclick="BrowseUp">
+                                <span>⬆️ ..</span>
+                            </div>
+                        }
+                        @if (_browseError is not null)
+                        {
+                            <div class="error-message" style="margin:0.5rem 0">@_browseError</div>
+                        }
+                        else if (_browseDirectories.Count == 0)
+                        {
+                            <div class="dir-browser-empty">Keine Unterverzeichnisse</div>
+                        }
+                        else
+                        {
+                            @for (var i = 0; i < _browseDirectories.Count; i++)
+                            {
+                                var idx = i;
+                                var dir = _browseDirectories[idx];
+                                <div class="dir-browser-item @(idx == _browseSelectedIndex ? "dir-browser-selected" : "")"
+                                     @onclick="() => SelectBrowserItem(idx)"
+                                     @ondblclick="() => BrowseInto(dir)">
+                                    <span>📂 @Path.GetFileName(dir)</span>
+                                </div>
+                            }
+                        }
+                    </div>
+                    <div class="dir-browser-actions">
+                        <button class="btn-upload" @onclick="SelectBrowsePath">Auswählen</button>
+                        <button class="btn-clear" @onclick="CloseBrowser">Schließen</button>
+                    </div>
+                </div>
+            }
+
             @if (!string.IsNullOrEmpty(_errorMessage))
             {
                 <div class="error-message" style="margin-top:0.75rem">@_errorMessage</div>
@@ -136,9 +187,20 @@
     private string? _errorMessage;
     private bool _isStarting;
 
+    private bool _showBrowser;
+    private string _browseRoot = "/media/import";
+    private string _browsePath = "/media/import";
+    private List<string> _browseDirectories = [];
+    private string? _browseError;
+    private int _browseSelectedIndex = -1;
+    private ElementReference _browserListRef;
+
     protected override void OnInitialized()
     {
         ImportService.OnProgressChanged += HandleProgress;
+
+        _browseRoot = HostMediaPath.HostMediaPath;
+        _browsePath = _browseRoot;
 
         // Pre-fill the directory input with the configured host-mount path.
         if (string.IsNullOrEmpty(_directoryPath))
@@ -209,6 +271,126 @@
         BatchImportStatus.Cancelled  => "status-cancelled",
         _                            => "status-scanning"
     };
+
+    private async Task ToggleBrowser()
+    {
+        _showBrowser = !_showBrowser;
+        if (_showBrowser)
+        {
+            _browsePath = !string.IsNullOrWhiteSpace(_directoryPath) && Directory.Exists(_directoryPath)
+                ? _directoryPath
+                : _browseRoot;
+            LoadBrowseDirectories();
+            await FocusBrowserListAsync();
+        }
+    }
+
+    private void CloseBrowser()
+    {
+        _showBrowser = false;
+    }
+
+    private async Task FocusBrowserListAsync()
+    {
+        await Task.Yield();
+        try { await _browserListRef.FocusAsync(); } catch { /* element may not be rendered yet */ }
+    }
+
+    private void LoadBrowseDirectories()
+    {
+        _browseError = null;
+        _browseDirectories = [];
+        _browseSelectedIndex = -1;
+        try
+        {
+            if (!Directory.Exists(_browsePath))
+            {
+                _browseError = $"Verzeichnis nicht gefunden: {_browsePath}";
+                return;
+            }
+            _browseDirectories = Directory.GetDirectories(_browsePath)
+                .OrderBy(d => Path.GetFileName(d), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _browseError = "Zugriff verweigert.";
+        }
+        catch (Exception ex)
+        {
+            _browseError = ex.Message;
+        }
+    }
+
+    private void SelectBrowserItem(int index)
+    {
+        _browseSelectedIndex = index;
+    }
+
+    private void BrowseInto(string dir)
+    {
+        _browsePath = dir;
+        LoadBrowseDirectories();
+    }
+
+    private void BrowseUp()
+    {
+        var parent = Path.GetDirectoryName(_browsePath);
+        if (parent is not null && parent.StartsWith(_browseRoot, StringComparison.Ordinal))
+        {
+            _browsePath = parent;
+            LoadBrowseDirectories();
+        }
+        else
+        {
+            _browsePath = _browseRoot;
+            LoadBrowseDirectories();
+        }
+    }
+
+    private void HandleBrowserKeyDown(KeyboardEventArgs e)
+    {
+        var maxIndex = _browseDirectories.Count - 1;
+        var hasParent = _browsePath != _browseRoot;
+
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                if (_browseSelectedIndex < maxIndex)
+                    _browseSelectedIndex++;
+                break;
+
+            case "ArrowUp":
+                if (_browseSelectedIndex > (hasParent ? -1 : 0))
+                    _browseSelectedIndex--;
+                break;
+
+            case "Enter":
+                if (_browseSelectedIndex == -1 && hasParent)
+                    BrowseUp();
+                else if (_browseSelectedIndex >= 0 && _browseSelectedIndex <= maxIndex)
+                    BrowseInto(_browseDirectories[_browseSelectedIndex]);
+                break;
+
+            case "Backspace":
+                if (hasParent)
+                    BrowseUp();
+                break;
+
+            case "Escape":
+                _showBrowser = false;
+                break;
+        }
+    }
+
+    private void SelectBrowsePath()
+    {
+        if (_browseSelectedIndex >= 0 && _browseSelectedIndex < _browseDirectories.Count)
+            _directoryPath = _browseDirectories[_browseSelectedIndex];
+        else
+            _directoryPath = _browsePath;
+        _showBrowser = false;
+    }
 
     private static string FormatDuration(TimeSpan ts)
     {
