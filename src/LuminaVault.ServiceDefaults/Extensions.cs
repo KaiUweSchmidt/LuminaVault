@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using NATS.Client.Core;
+using NATS.Client.Serializers.Json;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -107,7 +108,11 @@ public static class Extensions
         builder.Services.AddSingleton<INatsConnection>(sp =>
         {
             var url = builder.Configuration["Nats:Url"] ?? "nats://localhost:4222";
-            var opts = NatsOpts.Default with { Url = url };
+            var opts = NatsOpts.Default with
+            {
+                Url = url,
+                SerializerRegistry = NatsJsonSerializerRegistry.Default
+            };
             return new NatsConnection(opts);
         });
 

@@ -91,6 +91,7 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
         mediaId, bucket, storageKey);
 
     var sw = System.Diagnostics.Stopwatch.StartNew();
+    var pipelineSw = System.Diagnostics.Stopwatch.StartNew();
     await using var stream = file.OpenReadStream();
     await minio.PutObjectAsync(new PutObjectArgs()
         .WithBucket(bucket)
@@ -101,6 +102,7 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     sw.Stop();
 
     logger.LogInformation("[PIPELINE] Schritt 2/5: MinIO-Upload abgeschlossen in {ElapsedMs}ms", sw.ElapsedMilliseconds);
+    await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.MinioUpload, sw.ElapsedMilliseconds, true, logger);
 
     var mediaItem = new MediaItem
     {
@@ -114,9 +116,12 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     };
 
     logger.LogInformation("[PIPELINE] Schritt 3/5: MediaItem in DB speichern - MediaId={MediaId}", mediaId);
+    sw.Restart();
     await db.MediaItems.AddAsync(mediaItem);
     await db.SaveChangesAsync();
+    sw.Stop();
     logger.LogInformation("[PIPELINE] Schritt 3/5: DB-Speicherung abgeschlossen");
+    await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.DatabaseSave, sw.ElapsedMilliseconds, true, logger);
 
     // Extract GPS coordinates and location name from EXIF (images only)
     double? gpsLatitude = null;
@@ -183,10 +188,12 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
             await thumbnails.RequestThumbnailAsync(mediaId, bucket, storageKey, file.ContentType);
             sw.Stop();
             logger.LogInformation("[PIPELINE] Schritt 4/5: Thumbnail-Generierung abgeschlossen in {ElapsedMs}ms", sw.ElapsedMilliseconds);
+            await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.ThumbnailGeneration, sw.ElapsedMilliseconds, true, logger);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "[PIPELINE] Schritt 4/5: Thumbnail-Generierung FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
+            await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.ThumbnailGeneration, 0, false, logger);
         }
     }
     else
@@ -204,10 +211,12 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
             await recognition.RecognizeAsync(mediaId, file.ContentType, bucket, storageKey);
             sw.Stop();
             logger.LogInformation("[PIPELINE] Schritt 5/5: ObjectRecognition abgeschlossen in {ElapsedMs}ms", sw.ElapsedMilliseconds);
+            await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.ObjectRecognition, sw.ElapsedMilliseconds, true, logger);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "[PIPELINE] Schritt 5/5: ObjectRecognition FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
+            await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.ObjectRecognition, 0, false, logger);
         }
     }
     else
@@ -235,7 +244,11 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
         logger.LogWarning(ex, "[PIPELINE] NATS-Publish FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
     }
 
-    logger.LogInformation("[PIPELINE] ===== Import abgeschlossen: MediaId={MediaId}, Datei={FileName} =====", mediaId, file.FileName);
+    pipelineSw.Stop();
+    await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.PipelineComplete, pipelineSw.ElapsedMilliseconds, true, logger);
+
+    logger.LogInformation("[PIPELINE] ===== Import abgeschlossen: MediaId={MediaId}, Datei={FileName}, Gesamtdauer={TotalMs}ms =====",
+        mediaId, file.FileName, pipelineSw.ElapsedMilliseconds);
     return Results.Created($"/media/{mediaId}", mediaItem);
 }).DisableAntiforgery();
 
@@ -302,6 +315,22 @@ static async Task EnsureBucketExistsAsync(IMinioClient minio, string bucket)
     bool exists = await minio.BucketExistsAsync(new BucketExistsArgs().WithBucket(bucket));
     if (!exists)
         await minio.MakeBucketAsync(new MakeBucketArgs().WithBucket(bucket));
+}
+
+static async Task PublishStepCompletedAsync(
+    INatsConnection nats, Guid mediaId, string stepName,
+    long durationMs, bool success, ILogger logger)
+{
+    try
+    {
+        var stepEvent = new PipelineStepCompletedEvent(
+            mediaId, stepName, durationMs, success, DateTimeOffset.UtcNow);
+        await nats.PublishAsync(NatsSubjects.PipelineStepCompleted, stepEvent);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "[PIPELINE] Step-Completion-Event konnte nicht veröffentlicht werden: {Step}", stepName);
+    }
 }
 
 public partial class Program { }

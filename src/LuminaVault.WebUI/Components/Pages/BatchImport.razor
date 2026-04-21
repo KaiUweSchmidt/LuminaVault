@@ -113,7 +113,20 @@
 
                 <div class="batch-stats">
                     <div class="batch-stat">
-                        <span class="batch-stat-label">Durchschn. Importzeit</span>
+                        <span class="batch-stat-label">Durchschn. Upload</span>
+                        <span class="batch-stat-value">
+                            @if (ImportService.AverageUploadTime is { } avgUpload)
+                            {
+                                @FormatDuration(avgUpload)
+                            }
+                            else
+                            {
+                                <span>-</span>
+                            }
+                        </span>
+                    </div>
+                    <div class="batch-stat">
+                        <span class="batch-stat-label">Durchschn. Pipeline (E2E)</span>
                         <span class="batch-stat-value">
                             @if (ImportService.AverageImportTime is { } avg)
                             {
@@ -137,6 +150,10 @@
                                 <span>-</span>
                             }
                         </span>
+                    </div>
+                    <div class="batch-stat">
+                        <span class="batch-stat-label">Pipeline fertig</span>
+                        <span class="batch-stat-value">@ImportService.PipelineCompletedCount / @ImportService.ImportedCount</span>
                     </div>
                 </div>
 

@@ -20,6 +20,7 @@ public enum BatchImportStatus
 /// </summary>
 public sealed class BatchImportService(
     IServiceScopeFactory scopeFactory,
+    PipelineCompletionTracker pipelineTracker,
     ILogger<BatchImportService> logger) : IDisposable
 {
     private static readonly string[] ValidExtensions =
@@ -44,10 +45,22 @@ public sealed class BatchImportService(
 
     private readonly List<double> _importMilliseconds = [];
 
-    public TimeSpan? AverageImportTime =>
+    /// <summary>Average HTTP upload duration (time until the server responds).</summary>
+    public TimeSpan? AverageUploadTime =>
         _importMilliseconds.Count > 0
             ? TimeSpan.FromMilliseconds(_importMilliseconds.Average())
             : null;
+
+    /// <summary>
+    /// Average end-to-end pipeline duration including all async steps
+    /// (thumbnail generation, object recognition, etc.) tracked via NATS completion events.
+    /// Falls back to <see cref="AverageUploadTime"/> when no pipeline completions are available yet.
+    /// </summary>
+    public TimeSpan? AverageImportTime =>
+        pipelineTracker.AveragePipelineDuration ?? AverageUploadTime;
+
+    /// <summary>Number of media items that have fully completed the async pipeline.</summary>
+    public int PipelineCompletedCount => pipelineTracker.CompletedCount;
 
     public TimeSpan? EstimatedTimeRemaining
     {
@@ -139,6 +152,7 @@ public sealed class BatchImportService(
         ImportedCount = 0;
         ErrorCount = 0;
         _importMilliseconds.Clear();
+        pipelineTracker.Clear();
         CurrentFile = null;
         OwnerCircuitId = null;
         NotifyProgress();
@@ -176,9 +190,10 @@ public sealed class BatchImportService(
                 await using var stream = File.OpenRead(filePath);
                 var fileName = Path.GetFileName(filePath);
                 var title = Path.GetFileNameWithoutExtension(filePath);
-                await mediaApi.UploadMediaAsync(stream, fileName, contentType, title, ct);
+                var result = await mediaApi.UploadMediaAsync(stream, fileName, contentType, title, ct);
 
                 sw.Stop();
+                pipelineTracker.Track(result.Id);
                 lock (_importMilliseconds)
                     _importMilliseconds.Add(sw.Elapsed.TotalMilliseconds);
                 ImportedCount++;

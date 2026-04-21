@@ -12,14 +12,50 @@ using Xunit;
 namespace LuminaVault.Pipeline.Tests;
 
 /// <summary>
+/// Shared fixture that loads the YOLO ONNX model once for all visual tests.
+/// </summary>
+public sealed class YoloFaceDetectorFixture : IDisposable
+{
+    private static readonly string SolutionRoot = Path.GetFullPath(
+        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+
+    private static readonly string ModelPath =
+        Path.Combine(SolutionRoot, "models", "yolov12m-face.onnx");
+
+    public YoloFaceDetector? Detector { get; }
+    public bool IsAvailable => Detector is not null;
+
+    public YoloFaceDetectorFixture()
+    {
+        if (!File.Exists(ModelPath))
+            return;
+
+        var loggerFactory = LoggerFactory.Create(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug));
+        var logger = loggerFactory.CreateLogger<YoloFaceDetector>();
+        Detector = new YoloFaceDetector(ModelPath, logger);
+    }
+
+    public void Dispose() => Detector?.Dispose();
+}
+
+/// <summary>
 /// Visual debugging test: runs YOLO face detection and draws bounding boxes onto a copy of the image.
 /// Requires the ONNX model and a test image on disk — marked as Slow/Manual.
 /// </summary>
-public class YoloFaceDetectorVisualTests
+public class YoloFaceDetectorVisualTests : IClassFixture<YoloFaceDetectorFixture>
 {
-    private const string ModelPath = @"C:\Git\LuminaVault\models\yolov12m-face.onnx";
-    private const string TestDataDir = @"C:\Git\LuminaVault\tests\testdata";
-    private const string OutputDir = @"C:\Git\LuminaVault\tests\testdata\output";
+    private static readonly string SolutionRoot = Path.GetFullPath(
+        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+
+    private static readonly string TestDataDir = Path.Combine(SolutionRoot, "tests", "testdata");
+    private static readonly string OutputDir = Path.Combine(TestDataDir, "output");
+
+    private readonly YoloFaceDetectorFixture _fixture;
+
+    public YoloFaceDetectorVisualTests(YoloFaceDetectorFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     private static readonly string[] ImageExtensions = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"];
 
@@ -46,33 +82,19 @@ public class YoloFaceDetectorVisualTests
     [Trait("Category", "Slow")]
     public void WhenImageProcessedThenBboxIsDrawnOnCopy(string imagePath)
     {
-        if (!File.Exists(ModelPath))
-            Assert.Skip($"ONNX model not found at {ModelPath}");
+        if (!_fixture.IsAvailable)
+            Assert.Skip("ONNX model not available");
 
-        using var loggerFactory = LoggerFactory.Create(b => b.AddConsole().SetMinimumLevel(LogLevel.Debug));
-        var logger = loggerFactory.CreateLogger<YoloFaceDetector>();
-
-        using var detector = new YoloFaceDetector(ModelPath, logger);
         var imageBytes = File.ReadAllBytes(imagePath);
-        var faces = detector.DetectFaces(imageBytes);
+        var faces = _fixture.Detector!.DetectFaces(imageBytes);
 
         var fileName = Path.GetFileNameWithoutExtension(imagePath);
         Directory.CreateDirectory(OutputDir);
 
         using var image = Image.Load<Rgba32>(imageBytes);
 
-        logger.LogInformation("[{File}] Image: {W}x{H}, Detected {Count} face(s)", fileName, image.Width, image.Height, faces.Count);
-        foreach (var face in faces)
-        {
-            logger.LogInformation(
-                "[{File}]   Bbox: x={X:F1}%, y={Y:F1}%, w={W:F1}%, h={H:F1}%, conf={Conf:F3}",
-                fileName, face.BboxX, face.BboxY, face.BboxWidth, face.BboxHeight, face.Confidence);
-        }
-
         DrawBoxes(image, faces, image.Width, image.Height);
         image.SaveAsJpeg(Path.Combine(OutputDir, $"yolo_bbox_{fileName}.jpg"));
-
-        logger.LogInformation("[{File}] Output saved", fileName);
     }
 
     private static readonly Color[] FaceColors =

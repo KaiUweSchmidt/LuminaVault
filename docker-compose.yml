@@ -176,6 +176,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       Services__ApiGateway: http://api-gateway:8080
+      Nats__Url: nats://nats:4222
       # Container-internal path that maps to HOST_MEDIA_PATH on the host.
       # Change HOST_MEDIA_PATH in your .env file or shell environment to point
       # to the directory on the host machine you want to import from.
@@ -189,7 +190,10 @@ services:
       # The default falls back to a local ./media sub-directory.
       - ${HOST_MEDIA_PATH:-./media}:/media/import:ro
     depends_on:
-      - api-gateway
+      api-gateway:
+        condition: service_started
+      nats:
+        condition: service_healthy
     ports:
       - "5001:8080"
 
