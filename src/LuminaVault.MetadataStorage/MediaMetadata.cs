@@ -3,6 +3,9 @@ namespace LuminaVault.MetadataStorage;
 public class MediaMetadata
 {
     public Guid Id { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string ContentType { get; set; } = string.Empty;
+    public long FileSizeBytes { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string[] Tags { get; set; } = [];
@@ -29,6 +32,9 @@ public class Face
 
 public record CreateMediaMetadataRequest(
     Guid MediaId,
+    string FileName,
+    string ContentType,
+    long FileSizeBytes,
     string Title,
     string Description,
     string[] Tags,

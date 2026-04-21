@@ -154,7 +154,7 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     try
     {
         await metadataStorage.CreateMetadataAsync(mediaId, title, file.FileName, file.ContentType,
-            gpsLatitude, gpsLongitude, gpsLocation);
+            file.Length, gpsLatitude, gpsLongitude, gpsLocation);
         logger.LogInformation("[PIPELINE] MetadataStorage-Eintrag erstellt für MediaId={MediaId}", mediaId);
     }
     catch (Exception ex)
