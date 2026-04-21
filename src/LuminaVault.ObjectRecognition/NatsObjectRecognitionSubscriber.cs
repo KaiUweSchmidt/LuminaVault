@@ -52,7 +52,7 @@ public sealed class NatsObjectRecognitionSubscriber(
     private async Task ProcessAsync(MediaImportedEvent evt, CancellationToken ct)
     {
         logger.LogInformation("[NATS:ObjRec] Schritt 1/3: Bild aus MinIO herunterladen für MediaId={MediaId}", evt.MediaId);
-        var imageStream = new MemoryStream();
+        using var imageStream = new MemoryStream();
         await minio.GetObjectAsync(new GetObjectArgs()
             .WithBucket(evt.StorageBucket)
             .WithObject(evt.StorageKey)

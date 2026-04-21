@@ -99,6 +99,8 @@ public static class Extensions
     /// <summary>
     /// Registers a <see cref="INatsConnection"/> singleton configured from the <c>Nats:Url</c>
     /// configuration key (falls back to <c>nats://localhost:4222</c>).
+    /// The connection is created via a factory overload so the DI container owns the instance
+    /// and will call <see cref="IAsyncDisposable.DisposeAsync"/> on application shutdown.
     /// </summary>
     public static TBuilder AddNatsClient<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {

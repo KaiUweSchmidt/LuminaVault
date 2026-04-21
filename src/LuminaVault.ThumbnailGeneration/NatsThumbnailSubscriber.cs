@@ -24,6 +24,8 @@ public sealed class NatsThumbnailSubscriber(
     {
         logger.LogInformation("[NATS:Thumbnails] Subscriber gestartet — wartet auf '{Subject}'", NatsSubjects.MediaImported);
 
+        await EnsureBucketExistsAsync(ThumbnailBucket);
+
         await foreach (var msg in nats.SubscribeAsync<MediaImportedEvent>(NatsSubjects.MediaImported, cancellationToken: stoppingToken))
         {
             var evt = msg.Data;
@@ -55,9 +57,7 @@ public sealed class NatsThumbnailSubscriber(
 
     private async Task GenerateThumbnailAsync(MediaImportedEvent evt, CancellationToken ct)
     {
-        await EnsureBucketExistsAsync(ThumbnailBucket);
-
-        var sourceStream = new MemoryStream();
+        using var sourceStream = new MemoryStream();
         await minio.GetObjectAsync(new GetObjectArgs()
             .WithBucket(evt.StorageBucket)
             .WithObject(evt.StorageKey)
@@ -83,15 +83,18 @@ public sealed class NatsThumbnailSubscriber(
             outputStream.Position = 0;
         }
 
-        var thumbnailKey = $"{evt.MediaId}/thumb.jpg";
-        await minio.PutObjectAsync(new PutObjectArgs()
-            .WithBucket(ThumbnailBucket)
-            .WithObject(thumbnailKey)
-            .WithStreamData(outputStream)
-            .WithObjectSize(outputStream.Length)
-            .WithContentType("image/jpeg"), ct);
+        await using (outputStream)
+        {
+            var thumbnailKey = $"{evt.MediaId}/thumb.jpg";
+            await minio.PutObjectAsync(new PutObjectArgs()
+                .WithBucket(ThumbnailBucket)
+                .WithObject(thumbnailKey)
+                .WithStreamData(outputStream)
+                .WithObjectSize(outputStream.Length)
+                .WithContentType("image/jpeg"), ct);
 
-        logger.LogInformation("[NATS:Thumbnails] Thumbnail erstellt: MediaId={MediaId}, Key={Key}", evt.MediaId, thumbnailKey);
+            logger.LogInformation("[NATS:Thumbnails] Thumbnail erstellt: MediaId={MediaId}, Key={Key}", evt.MediaId, thumbnailKey);
+        }
     }
 
     private async Task EnsureBucketExistsAsync(string bucketName)
