@@ -83,7 +83,7 @@ public class YoloFaceDetectorVisualTests
 
     private static void DrawBoxes(Image<Rgba32> image, IReadOnlyList<DetectedFace> faces, int imgW, int imgH)
     {
-        var font = SystemFonts.CreateFont("Arial", 20, FontStyle.Bold);
+        var font = SystemFonts.CreateFont("DejaVu Sans", 20, FontStyle.Bold);
 
         image.Mutate(ctx =>
         {

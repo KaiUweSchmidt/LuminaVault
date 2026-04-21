@@ -34,7 +34,7 @@ public static class FaceImageRenderer
 
     private static void DrawBoxes(Image<Rgba32> image, IReadOnlyList<Face> faces)
     {
-        var font = SystemFonts.CreateFont("Arial", Math.Max(16, image.Width / 60f), FontStyle.Bold);
+        var font = SystemFonts.CreateFont("DejaVu Sans", Math.Max(16, image.Width / 60f), FontStyle.Bold);
 
         image.Mutate(ctx =>
         {

@@ -12,5 +12,7 @@
     <Project Path="src/LuminaVault.VectorSearch/LuminaVault.VectorSearch.csproj" />
     <Project Path="src/LuminaVault.WebUI/LuminaVault.WebUI.csproj" />
   </Folder>
-  <Project Path="tests/LuminaVault.Pipeline.Tests/LuminaVault.Pipeline.Tests.csproj" />
+  <Project Path="tests/LuminaVault.Pipeline.Tests/LuminaVault.Pipeline.Tests.csproj">
+    <Build Solution="Debug|*" Project="false" />
+  </Project>
 </Solution>
