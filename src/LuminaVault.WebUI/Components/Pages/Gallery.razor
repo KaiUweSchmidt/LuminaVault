@@ -90,7 +90,11 @@
                 else
                 {
                     <div class="preview-container">
-                        <img src="@_previewUrl" alt="@_selectedItem.FileName" class="preview-media" />
+                        <div class="preview-image-centering">
+                            <div class="preview-image-wrapper">
+                            <img src="@(_annotatedPreviewUrl ?? _previewUrl)" alt="@_selectedItem.FileName" class="preview-media" />
+                            </div>
+                        </div>
                         <div class="preview-info">
                             <strong>@_selectedItem.FileName</strong>
                             <small>@_selectedItem.ContentType · @FormatFileSize(_selectedItem.FileSizeBytes)</small>
@@ -149,14 +153,14 @@
                 <button @onclick="CloseFaces">✕</button>
             </div>
             <div class="faces-list">
-                @foreach (var face in _faces)
+                @for (var i = 0; i < _faces.Count; i++)
                 {
+                    var face = _faces[i];
+                    var faceNumber = i + 1;
                     <div class="face-item">
-                        <div class="face-description">@face.FaceDescription</div>
-                        @if (!string.IsNullOrWhiteSpace(face.Name))
-                        {
-                            <div class="face-name"><strong>Name:</strong> @face.Name</div>
-                        }
+                        <div class="face-frame">
+                            <span class="face-frame-label">Gesicht @faceNumber</span>
+                        </div>
                         <div class="face-edit">
                             <input @bind="_faceNameInputs[face.Id]" placeholder="Name vergeben..." />
                             <button @onclick="() => SaveFaceNameAsync(face.Id)">Speichern</button>
@@ -182,18 +186,20 @@
 <style>
     .context-menu {
         position: fixed;
-        background: white;
-        border: 1px solid #ccc;
+        background: #1a1a2e;
+        border: 1px solid #4a90d9;
         border-radius: 4px;
-        box-shadow: 2px 2px 8px rgba(0,0,0,0.2);
+        box-shadow: 2px 4px 12px rgba(0,0,0,0.4);
         z-index: 1000;
         min-width: 220px;
     }
     .context-menu-item {
-        padding: 0.5rem 1rem;
+        padding: 0.6rem 1rem;
         cursor: pointer;
+        color: #f0f0f0;
+        font-weight: 500;
     }
-    .context-menu-item:hover { background: #f0f0f0; }
+    .context-menu-item:hover { background: #4a90d9; color: #fff; }
     .similar-persons-panel {
         margin-top: 1rem;
         border: 1px solid #4a90d9;
@@ -227,13 +233,27 @@
     .tags { color: #666; font-size: 0.85em; }
     .faces-list { display: flex; flex-direction: column; gap: 1rem; }
     .face-item {
-        border: 1px solid #ddd;
-        border-radius: 4px;
+        border: 2px solid #4a90d9;
+        border-radius: 6px;
         padding: 0.75rem;
         background: white;
+        position: relative;
     }
-    .face-description { font-size: 0.9em; color: #333; margin-bottom: 0.5rem; }
-    .face-name { font-size: 0.85em; margin-bottom: 0.5rem; }
+    .face-frame {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px dashed #4a90d9;
+        border-radius: 4px;
+        padding: 1rem;
+        margin-bottom: 0.5rem;
+        background: #eef4fc;
+    }
+    .face-frame-label {
+        font-weight: 700;
+        font-size: 1em;
+        color: #2c5f9e;
+    }
     .face-edit { display: flex; gap: 0.5rem; }
     .face-edit input { flex: 1; padding: 0.25rem 0.5rem; }
 </style>
@@ -255,15 +275,9 @@
         {
             _mediaItems = await MediaApi.GetImportedMediaAsync();
 
-            var tasks = _mediaItems.Select(async item =>
+            foreach (var item in _mediaItems)
             {
-                var url = await MediaApi.GetThumbnailUrlAsync(item.Id);
-                return (item.Id, url);
-            });
-
-            foreach (var (id, url) in await Task.WhenAll(tasks))
-            {
-                _thumbnails[id] = url;
+                _thumbnails[item.Id] = $"/proxy/thumbnail/{item.Id}";
             }
         }
         catch (Exception ex)
@@ -283,10 +297,7 @@
 
         _selectedId = item.Id;
         _selectedItem = item;
-        _previewUrl = null;
-        _isLoadingPreview = true;
-
-        _previewUrl = await MediaApi.GetOriginalUrlAsync(item.Id);
+        _previewUrl = $"/proxy/media/{item.Id}";
         _isLoadingPreview = false;
     }
 
@@ -302,6 +313,7 @@
     private bool _facesVisible;
     private List<Face> _faces = [];
     private Dictionary<Guid, string?> _faceNameInputs = [];
+    private string? _annotatedPreviewUrl;
 
     private void ShowContextMenu(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, ImportedMediaItem item)
     {
@@ -338,13 +350,24 @@
     {
         _contextMenuVisible = false;
         if (_contextMenuItem is null) return;
+
+        if (_selectedId != _contextMenuItem.Id)
+            await SelectItemAsync(_contextMenuItem);
+
         _isSearching = true;
         _facesVisible = true;
         _similarPersonsVisible = false;
+        _annotatedPreviewUrl = null;
         try
         {
             _faces = await MediaApi.GetFacesAsync(_contextMenuItem.Id);
             _faceNameInputs = _faces.ToDictionary(f => f.Id, f => f.Name);
+
+            if (_faces.Count > 0 && _contextMenuItem is not null)
+            {
+                var imageBytes = await MediaApi.DownloadImageBytesAsync(_contextMenuItem.Id);
+                _annotatedPreviewUrl = FaceImageRenderer.Render(imageBytes, _faces);
+            }
         }
         catch (Exception ex)
         {
@@ -381,6 +404,7 @@
         _facesVisible = false;
         _faces = [];
         _faceNameInputs = [];
+        _annotatedPreviewUrl = null;
     }
 
     private static string FormatFileSize(long bytes) => bytes switch

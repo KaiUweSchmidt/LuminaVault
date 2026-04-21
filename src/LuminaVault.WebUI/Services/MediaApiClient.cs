@@ -38,14 +38,15 @@ public class MediaApiClient(HttpClient httpClient)
     }
 
     /// <summary>
-    /// Gets the thumbnail URL for a media item.
+    /// Gets thumbnail image bytes from the internal thumbnail service.
     /// </summary>
-    public async Task<string?> GetThumbnailUrlAsync(Guid mediaId)
+    public async Task<byte[]?> GetThumbnailBytesAsync(Guid mediaId, CancellationToken cancellationToken = default)
     {
         try
         {
-            var result = await httpClient.GetFromJsonAsync<ThumbnailResult>($"/api/thumbnails/thumbnails/{mediaId}");
-            return result?.Url;
+            var response = await httpClient.GetAsync($"/api/thumbnails/thumbnails/{mediaId}", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadAsByteArrayAsync(cancellationToken);
         }
         catch (HttpRequestException)
         {
@@ -62,14 +63,17 @@ public class MediaApiClient(HttpClient httpClient)
     }
 
     /// <summary>
-    /// Gets a presigned URL for the original media file.
+    /// Gets original media file bytes from the internal media service.
     /// </summary>
-    public async Task<string?> GetOriginalUrlAsync(Guid mediaId)
+    public async Task<(byte[] Data, string ContentType)?> GetOriginalBytesAsync(Guid mediaId, CancellationToken cancellationToken = default)
     {
         try
         {
-            var result = await httpClient.GetFromJsonAsync<PresignedUrlResult>($"/api/media/media/{mediaId}/url");
-            return result?.Url;
+            var response = await httpClient.GetAsync($"/api/media/media/{mediaId}/url", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!response.IsSuccessStatusCode) return null;
+            var data = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+            return (data, contentType);
         }
         catch (HttpRequestException)
         {
@@ -88,6 +92,35 @@ public class MediaApiClient(HttpClient httpClient)
 
     public async Task<List<MediaItem>> FindSimilarPersonsAsync(Guid mediaId) =>
         await httpClient.GetFromJsonAsync<List<MediaItem>>($"/api/metadata/faces/similar/{mediaId}") ?? [];
+
+    /// <summary>
+    /// Downloads the original image bytes for a media item via the internal API.
+    /// </summary>
+    public async Task<byte[]> DownloadImageBytesAsync(Guid mediaId, CancellationToken cancellationToken = default)
+    {
+        var response = await httpClient.GetAsync($"/api/media/media/{mediaId}/url", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Purges all data from MinIO storage, metadata, vector embeddings, and media import databases.
+    /// </summary>
+    public async Task PurgeAllDataAsync(CancellationToken cancellationToken = default)
+    {
+        var tasks = new[]
+        {
+            httpClient.DeleteAsync("/api/media/admin/purge-all", cancellationToken),
+            httpClient.DeleteAsync("/api/metadata/admin/purge-all", cancellationToken),
+            httpClient.DeleteAsync("/api/search/admin/purge-all", cancellationToken)
+        };
+
+        var responses = await Task.WhenAll(tasks);
+        foreach (var response in responses)
+        {
+            response.EnsureSuccessStatusCode();
+        }
+    }
 }
 
 public record MediaItem(
@@ -106,6 +139,10 @@ public record Face(
     Guid MediaId,
     string? Name,
     string FaceDescription,
+    double BboxX,
+    double BboxY,
+    double BboxWidth,
+    double BboxHeight,
     DateTimeOffset DetectedAt);
 
 public record SearchResult(Guid MediaId, double Distance);
@@ -113,7 +150,3 @@ public record SearchResult(Guid MediaId, double Distance);
 public record ImportResult(Guid Id, string FileName, string ContentType, long FileSizeBytes, DateTimeOffset ImportedAt, string StorageBucket, string StorageKey);
 
 public record ImportedMediaItem(Guid Id, string FileName, string ContentType, long FileSizeBytes, DateTimeOffset ImportedAt, string StorageBucket, string StorageKey);
-
-public record ThumbnailResult(string Url);
-
-public record PresignedUrlResult(string Url);

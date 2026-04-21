@@ -13,7 +13,8 @@ builder.Services.AddRazorComponents()
 builder.Services.Configure<ImportSettings>(builder.Configuration.GetSection(ImportSettings.SectionName));
 
 builder.Services.AddHttpClient<MediaApiClient>(client =>
-    client.BaseAddress = new Uri("http://api-gateway"));
+    client.BaseAddress = new Uri(builder.Configuration["Services:ApiGateway"]
+        ?? "http://api-gateway:8080"));
 
 var app = builder.Build();
 
@@ -34,6 +35,23 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// Proxy endpoints — serve media files through WebUI so internal services stay unexposed
+app.MapGet("/proxy/thumbnail/{mediaId:guid}", async (Guid mediaId, MediaApiClient mediaApi) =>
+{
+    var bytes = await mediaApi.GetThumbnailBytesAsync(mediaId);
+    return bytes is not null
+        ? Results.File(bytes, "image/jpeg")
+        : Results.NotFound();
+});
+
+app.MapGet("/proxy/media/{mediaId:guid}", async (Guid mediaId, MediaApiClient mediaApi) =>
+{
+    var result = await mediaApi.GetOriginalBytesAsync(mediaId);
+    return result.HasValue
+        ? Results.File(result.Value.Data, result.Value.ContentType)
+        : Results.NotFound();
+});
 
 app.MapDefaultEndpoints();
 

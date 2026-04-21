@@ -1,0 +1,92 @@
+@page "/settings"
+@using LuminaVault.WebUI.Services
+@inject MediaApiClient MediaApi
+@rendermode InteractiveServer
+
+<div class="settings-page">
+    <h1>⚙️ Einstellungen</h1>
+
+    <section class="settings-section settings-danger">
+        <h2>⚠️ Gefahrenzone</h2>
+        <p class="danger-description">
+            Diese Aktionen können nicht rückgängig gemacht werden. Alle Daten werden unwiderruflich gelöscht.
+        </p>
+
+        <div class="danger-card">
+            <div class="danger-card-info">
+                <strong>Alle Daten löschen</strong>
+                <p>Löscht sämtliche Medien aus dem MinIO-Speicher, alle Metadaten, Gesichter und Vektor-Embeddings aus der Datenbank.</p>
+            </div>
+
+            @if (!_confirmVisible)
+            {
+                <button class="btn-danger" @onclick="ShowConfirmation">
+                    🗑️ Alle Daten löschen
+                </button>
+            }
+            else
+            {
+                <div class="danger-confirm">
+                    <p class="confirm-warning">Bist du sicher? Diese Aktion löscht <strong>alle</strong> Daten unwiderruflich!</p>
+                    <div class="confirm-buttons">
+                        <button class="btn-danger-confirm" @onclick="PurgeAllDataAsync" disabled="@_isPurging">
+                            @if (_isPurging)
+                            {
+                                <span>Lösche…</span>
+                            }
+                            else
+                            {
+                                <span>Ja, alles löschen!</span>
+                            }
+                        </button>
+                        <button class="btn-cancel" @onclick="HideConfirmation" disabled="@_isPurging">Abbrechen</button>
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (!string.IsNullOrEmpty(_resultMessage))
+        {
+            <div class="@(_isError ? "result-error" : "result-success")">
+                @_resultMessage
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    private bool _confirmVisible;
+    private bool _isPurging;
+    private string? _resultMessage;
+    private bool _isError;
+
+    private void ShowConfirmation()
+    {
+        _confirmVisible = true;
+        _resultMessage = null;
+    }
+
+    private void HideConfirmation() => _confirmVisible = false;
+
+    private async Task PurgeAllDataAsync()
+    {
+        _isPurging = true;
+        _resultMessage = null;
+        try
+        {
+            await MediaApi.PurgeAllDataAsync();
+            _resultMessage = "✅ Alle Daten wurden erfolgreich gelöscht.";
+            _isError = false;
+            _confirmVisible = false;
+        }
+        catch (Exception ex)
+        {
+            _resultMessage = $"❌ Fehler beim Löschen: {ex.Message}";
+            _isError = true;
+        }
+        finally
+        {
+            _isPurging = false;
+        }
+    }
+}

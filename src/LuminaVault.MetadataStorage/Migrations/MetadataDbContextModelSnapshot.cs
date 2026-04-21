@@ -28,6 +28,18 @@ namespace LuminaVault.MetadataStorage.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<double>("BboxHeight")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("BboxWidth")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("BboxX")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("BboxY")
+                        .HasColumnType("double precision");
+
                     b.Property<DateTimeOffset>("DetectedAt")
                         .HasColumnType("timestamp with time zone");
 

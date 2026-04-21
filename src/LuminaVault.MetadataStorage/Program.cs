@@ -4,7 +4,8 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.AddNpgsqlDbContext<MetadataDbContext>("luminavault-metadata");
+builder.Services.AddDbContext<MetadataDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("luminavault-metadata")));
 
 var app = builder.Build();
 
@@ -106,6 +107,10 @@ app.MapPost("/faces", async (CreateFaceRequest request, MetadataDbContext db, IL
         MediaId = request.MediaId,
         FaceDescription = request.FaceDescription ?? string.Empty,
         Name = request.Name,
+        BboxX = request.BboxX,
+        BboxY = request.BboxY,
+        BboxWidth = request.BboxWidth,
+        BboxHeight = request.BboxHeight,
         DetectedAt = DateTimeOffset.UtcNow
     };
     await db.Faces.AddAsync(face);
@@ -141,6 +146,14 @@ app.MapGet("/faces/similar/{mediaId:guid}", async (Guid mediaId, MetadataDbConte
         .OrderByDescending(m => m.PersonCount)
         .ToListAsync();
     return Results.Ok(results);
+});
+
+app.MapDelete("/admin/purge-all", async (MetadataDbContext db, ILogger<Program> logger) =>
+{
+    var faceCount = await db.Faces.ExecuteDeleteAsync();
+    var metaCount = await db.MediaMetadata.ExecuteDeleteAsync();
+    logger.LogWarning("[ADMIN] Purge-All: {FaceCount} Faces und {MetaCount} Metadata gelöscht", faceCount, metaCount);
+    return Results.Ok(new { DeletedFaces = faceCount, DeletedMetadata = metaCount });
 });
 
 app.Run();

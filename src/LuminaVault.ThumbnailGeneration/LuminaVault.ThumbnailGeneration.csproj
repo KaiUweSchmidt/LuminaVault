@@ -5,7 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Aspire.Minio.Client" />
+    <PackageReference Include="Minio" />
     <PackageReference Include="SixLabors.ImageSharp" />
   </ItemGroup>
 
