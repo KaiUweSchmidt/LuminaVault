@@ -165,10 +165,13 @@ app.MapGet("/faces/names", async (MetadataDbContext db) =>
 
 app.MapDelete("/admin/purge-all", async (MetadataDbContext db, ILogger<Program> logger) =>
 {
+    var collectionMediaCount = await db.CollectionMediaItems.ExecuteDeleteAsync();
+    var collectionCount = await db.Collections.ExecuteDeleteAsync();
     var faceCount = await db.Faces.ExecuteDeleteAsync();
     var metaCount = await db.MediaMetadata.ExecuteDeleteAsync();
-    logger.LogWarning("[ADMIN] Purge-All: {FaceCount} Faces und {MetaCount} Metadata gelöscht", faceCount, metaCount);
-    return Results.Ok(new { DeletedFaces = faceCount, DeletedMetadata = metaCount });
+    logger.LogWarning("[ADMIN] Purge-All: {FaceCount} Faces, {MetaCount} Metadata, {CollectionCount} Collections, {CollectionMediaCount} CollectionMediaItems gelöscht",
+        faceCount, metaCount, collectionCount, collectionMediaCount);
+    return Results.Ok(new { DeletedFaces = faceCount, DeletedMetadata = metaCount, DeletedCollections = collectionCount, DeletedCollectionMediaItems = collectionMediaCount });
 });
 
 // Collections endpoints

@@ -11,7 +11,7 @@
     <div class="sammlungen-toolbar">
         <button class="btn-primary" @onclick="ShowNewCollectionDialog">➕ Neue Sammlung</button>
         <button class="btn-danger" @onclick="DeleteSelectedCollectionAsync" disabled="@(_selectedCollection is null)">🗑️ Sammlung löschen</button>
-        <button class="btn-secondary" @onclick="ShowRemoveMediaDialogAsync" disabled="@(_selectedCollection is null)">➖ Bild aus Sammlung entfernen</button>
+        <button class="btn-secondary" @onclick="RemoveSelectedMediaAsync" disabled="@(_selectedCollection is null || _selectedMediaIds.Count == 0)">➖ Bild(er) aus Sammlung entfernen</button>
         <a class="btn-download @(_selectedCollection is null ? "btn-disabled" : "")"
            href="@(_selectedCollection is not null ? $"/proxy/collections/{_selectedCollection.Id}/download" : "#")"
            download>⬇️ Sammlung herunterladen</a>
@@ -39,28 +39,84 @@
     }
     else
     {
-        <table class="sammlungen-grid">
-            <thead>
-                <tr>
-                    <th class="sortable" @onclick='() => ToggleSort("name")'>Name @SortIndicator("name")</th>
-                    <th class="sortable" @onclick='() => ToggleSort("description")'>Beschreibung @SortIndicator("description")</th>
-                    <th class="sortable" @onclick='() => ToggleSort("created")'>Erstellt am @SortIndicator("created")</th>
-                    <th class="sortable" @onclick='() => ToggleSort("count")'>Anzahl Bilder @SortIndicator("count")</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var collection in SortedCollections)
+        <div class="gallery-split">
+            <div class="gallery-list">
+                <table class="sammlungen-grid">
+                    <thead>
+                        <tr>
+                            <th class="sortable" @onclick='() => ToggleSort("name")'>Name @SortIndicator("name")</th>
+                            <th class="sortable" @onclick='() => ToggleSort("description")'>Beschreibung @SortIndicator("description")</th>
+                            <th class="sortable" @onclick='() => ToggleSort("created")'>Erstellt am @SortIndicator("created")</th>
+                            <th class="sortable" @onclick='() => ToggleSort("count")'>Anzahl Bilder @SortIndicator("count")</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var collection in SortedCollections)
+                        {
+                            <tr class="@(collection.Id == _selectedCollection?.Id ? "selected" : "")"
+                                @onclick="() => ToggleExpandCollection(collection)">
+                                <td>@collection.Name</td>
+                                <td class="col-description">@collection.Description</td>
+                                <td>@collection.CreatedAt.LocalDateTime.ToString("dd.MM.yyyy HH:mm")</td>
+                                <td>@collection.ImageCount</td>
+                            </tr>
+                            @if (_expandedCollectionId == collection.Id)
+                            {
+                                <tr class="expanded-row">
+                                    <td colspan="4">
+                                        @if (_isLoadingMedia)
+                                        {
+                                            <div class="loading-message">Lade Bilder…</div>
+                                        }
+                                        else if (_collectionMediaIds.Count == 0)
+                                        {
+                                            <div class="expanded-empty">Diese Sammlung enthält keine Bilder.</div>
+                                        }
+                                        else
+                                        {
+                                            <div class="expanded-images">
+                                                @foreach (var mediaId in _collectionMediaIds)
+                                                {
+                                                    <div class="expanded-image-item @(_selectedMediaIds.Contains(mediaId) ? "selected-media" : "") @(_previewMediaId == mediaId ? "preview-active" : "")"
+                                                         @onclick="() => SelectMediaForPreview(mediaId)" @onclick:stopPropagation="true">
+                                                        <img src="/proxy/thumbnail/@mediaId" alt="@mediaId" loading="lazy"
+                                                             onerror="this.style.display='none'" />
+                                                        @if (_selectedMediaIds.Contains(mediaId))
+                                                        {
+                                                            <span class="check-mark">✔</span>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="gallery-preview">
+                @if (_previewMediaId is null)
                 {
-                    <tr class="@(collection.Id == _selectedCollection?.Id ? "selected" : "")"
-                        @onclick="() => SelectCollection(collection)">
-                        <td>@collection.Name</td>
-                        <td class="col-description">@collection.Description</td>
-                        <td>@collection.CreatedAt.LocalDateTime.ToString("dd.MM.yyyy HH:mm")</td>
-                        <td>@collection.ImageCount</td>
-                    </tr>
+                    <div class="preview-empty">
+                        <span class="preview-empty-icon">👈</span>
+                        <p>Bild aus einer Sammlung auswählen</p>
+                    </div>
                 }
-            </tbody>
-        </table>
+                else
+                {
+                    <div class="preview-container">
+                        <div class="preview-image-centering">
+                            <div class="preview-image-wrapper">
+                                <img src="/proxy/media/@_previewMediaId" alt="Vorschau" class="preview-media" />
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
     }
 </div>
 
@@ -85,43 +141,10 @@
     </div>
 }
 
-@if (_showRemoveMediaDialog && _selectedCollection is not null)
-{
-    <div class="modal-overlay" @onclick="CloseRemoveMediaDialog">
-        <div class="modal-dialog" @onclick:stopPropagation="true">
-            <h2>Bild aus Sammlung entfernen</h2>
-            <p>Sammlung: <strong>@_selectedCollection.Name</strong></p>
-            @if (_isLoadingMedia)
-            {
-                <div class="loading-message">Lade Bilder…</div>
-            }
-            else if (_collectionMediaIds.Count == 0)
-            {
-                <p>Diese Sammlung enthält keine Bilder.</p>
-            }
-            else
-            {
-                <div class="media-list">
-                    @foreach (var mediaId in _collectionMediaIds)
-                    {
-                        <div class="media-list-item">
-                            <img src="/proxy/thumbnail/@mediaId" alt="@mediaId" class="media-thumb" loading="lazy"
-                                 onerror="this.style.display='none'" />
-                            <span>@mediaId</span>
-                            <button class="btn-danger btn-sm" @onclick="() => RemoveMediaFromCollectionAsync(mediaId)">Entfernen</button>
-                        </div>
-                    }
-                </div>
-            }
-            <div class="modal-actions">
-                <button class="btn-secondary" @onclick="CloseRemoveMediaDialog">Schließen</button>
-            </div>
-        </div>
-    </div>
-}
+
 
 <style>
-    .sammlungen-page { max-width: 1100px; margin: 0 auto; }
+    .sammlungen-page { margin: 0 auto; display: flex; flex-direction: column; height: 100%; }
     .sammlungen-description { color: var(--color-text-muted); margin-bottom: 1.5rem; }
     .sammlungen-toolbar {
         display: flex;
@@ -235,6 +258,29 @@
     .media-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 350px; overflow-y: auto; margin-bottom: 1rem; }
     .media-list-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem; border: 1px solid var(--color-border, #eee); border-radius: 4px; }
     .media-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
+    .expanded-row td { background: var(--color-surface, #f8f8f8); padding: 0.75rem !important; }
+    .expanded-empty { color: var(--color-text-muted, #888); padding: 0.5rem 0; }
+    .expanded-images { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .expanded-image-item {
+        position: relative;
+        width: 80px; height: 80px;
+        border: 2px solid transparent;
+        border-radius: 6px;
+        overflow: hidden;
+        cursor: pointer;
+        transition: border-color 0.15s;
+    }
+    .expanded-image-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .expanded-image-item:hover { border-color: var(--color-accent, #4a90d9); }
+    .expanded-image-item.selected-media { border-color: #dc3545; }
+    .expanded-image-item.preview-active { border-color: var(--color-accent, #4a90d9); box-shadow: 0 0 0 2px var(--color-accent, #4a90d9); }
+    .check-mark {
+        position: absolute; top: 2px; right: 2px;
+        background: #dc3545; color: #fff;
+        border-radius: 50%; width: 20px; height: 20px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.7rem; pointer-events: none;
+    }
 </style>
 
 @code {
@@ -251,9 +297,11 @@
     private string _newCollectionName = string.Empty;
     private string _newCollectionDescription = string.Empty;
 
-    private bool _showRemoveMediaDialog;
+    private Guid? _expandedCollectionId;
     private bool _isLoadingMedia;
     private List<Guid> _collectionMediaIds = [];
+    private HashSet<Guid> _selectedMediaIds = [];
+    private Guid? _previewMediaId;
 
     private IEnumerable<CollectionDto> SortedCollections
     {
@@ -325,9 +373,47 @@
         }
     }
 
-    private void SelectCollection(CollectionDto collection)
+    private async Task ToggleExpandCollection(CollectionDto collection)
     {
-        _selectedCollection = _selectedCollection?.Id == collection.Id ? null : collection;
+        _selectedMediaIds.Clear();
+        _previewMediaId = null;
+
+        if (_expandedCollectionId == collection.Id)
+        {
+            // Collapse
+            _expandedCollectionId = null;
+            _collectionMediaIds = [];
+            _selectedCollection = _selectedCollection?.Id == collection.Id ? null : collection;
+            return;
+        }
+
+        // Expand this collection
+        _selectedCollection = collection;
+        _expandedCollectionId = collection.Id;
+        _isLoadingMedia = true;
+        try
+        {
+            _collectionMediaIds = await MediaApi.GetCollectionMediaIdsAsync(collection.Id);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Fehler: {ex.Message}";
+            _collectionMediaIds = [];
+        }
+        finally
+        {
+            _isLoadingMedia = false;
+        }
+    }
+
+    private void SelectMediaForPreview(Guid mediaId)
+    {
+        // Toggle selection for bulk operations
+        if (!_selectedMediaIds.Remove(mediaId))
+            _selectedMediaIds.Add(mediaId);
+
+        // Always set as preview target
+        _previewMediaId = mediaId;
     }
 
     private void ShowNewCollectionDialog()
@@ -379,43 +465,31 @@
         }
     }
 
-    private async Task ShowRemoveMediaDialogAsync()
+    private async Task RemoveSelectedMediaAsync()
     {
-        if (_selectedCollection is null) return;
-        _showRemoveMediaDialog = true;
-        _isLoadingMedia = true;
+        if (_selectedCollection is null || _selectedMediaIds.Count == 0) return;
         _errorMessage = null;
-        try
+        _successMessage = null;
+        var removed = 0;
+        foreach (var mediaId in _selectedMediaIds.ToList())
         {
-            _collectionMediaIds = await MediaApi.GetCollectionMediaIdsAsync(_selectedCollection.Id);
+            try
+            {
+                await MediaApi.RemoveMediaFromCollectionAsync(_selectedCollection.Id, mediaId);
+                _collectionMediaIds.Remove(mediaId);
+                removed++;
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = $"Fehler beim Entfernen: {ex.Message}";
+            }
         }
-        catch (Exception ex)
+        _selectedMediaIds.Clear();
+        if (removed > 0)
         {
-            _errorMessage = $"Fehler: {ex.Message}";
-            _collectionMediaIds = [];
-        }
-        finally
-        {
-            _isLoadingMedia = false;
-        }
-    }
-
-    private void CloseRemoveMediaDialog() => _showRemoveMediaDialog = false;
-
-    private async Task RemoveMediaFromCollectionAsync(Guid mediaId)
-    {
-        if (_selectedCollection is null) return;
-        try
-        {
-            await MediaApi.RemoveMediaFromCollectionAsync(_selectedCollection.Id, mediaId);
-            _collectionMediaIds.Remove(mediaId);
+            _successMessage = $"{removed} Bild(er) aus Sammlung entfernt.";
             await LoadCollectionsAsync();
-            // Update selected collection image count
-            _selectedCollection = _collections.FirstOrDefault(c => c.Id == _selectedCollection.Id);
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = $"Fehler: {ex.Message}";
+            _selectedCollection = _collections.FirstOrDefault(c => c.Id == _selectedCollection?.Id);
         }
     }
 }
