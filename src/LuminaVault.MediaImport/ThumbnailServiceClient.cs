@@ -2,10 +2,10 @@ namespace LuminaVault.MediaImport;
 
 public class ThumbnailServiceClient(HttpClient httpClient, ILogger<ThumbnailServiceClient> logger)
 {
-    public async Task RequestThumbnailAsync(Guid mediaId, string bucket, string storageKey)
+    public async Task RequestThumbnailAsync(Guid mediaId, string bucket, string storageKey, string? contentType = null)
     {
         logger.LogInformation("[PIPELINE:Thumbnail] HTTP-Aufruf → POST /thumbnails/generate für MediaId={MediaId}", mediaId);
-        var request = new { MediaId = mediaId, Bucket = bucket, StorageKey = storageKey };
+        var request = new { MediaId = mediaId, Bucket = bucket, StorageKey = storageKey, ContentType = contentType };
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var response = await httpClient.PostAsJsonAsync("/thumbnails/generate", request);
         sw.Stop();

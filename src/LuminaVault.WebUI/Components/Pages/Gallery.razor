@@ -32,14 +32,53 @@
                     <thead>
                         <tr>
                             <th class="col-thumb">Thumbnail</th>
-                            <th class="col-date">Aufnahme Datum</th>
-                            <th class="col-size">Dateigröße</th>
-                            <th class="col-type">Datei Typ</th>
-                            <th class="col-gps">GPS Standort</th>
+                            <th class="col-date sortable" @onclick='() => ToggleSort("date")'>
+                                Aufnahme Datum @SortIndicator("date")
+                            </th>
+                            <th class="col-size sortable" @onclick='() => ToggleSort("size")'>
+                                Dateigröße @SortIndicator("size")
+                            </th>
+                            <th class="col-type sortable" @onclick='() => ToggleSort("type")'>
+                                Datei Typ @SortIndicator("type")
+                            </th>
+                            <th class="col-gps sortable" @onclick='() => ToggleSort("gps")'>
+                                GPS Standort @SortIndicator("gps")
+                            </th>
+                        </tr>
+                        <tr class="filter-row">
+                            <th></th>
+                            <th>
+                                <select class="filter-select" @bind="_filterDate">
+                                    <option value="">Alle</option>
+                                    @foreach (var v in DistinctDates)
+                                    {
+                                        <option value="@v">@v</option>
+                                    }
+                                </select>
+                            </th>
+                            <th></th>
+                            <th>
+                                <select class="filter-select" @bind="_filterType">
+                                    <option value="">Alle</option>
+                                    @foreach (var v in DistinctTypes)
+                                    {
+                                        <option value="@v">@v</option>
+                                    }
+                                </select>
+                            </th>
+                            <th>
+                                <select class="filter-select" @bind="_filterGps">
+                                    <option value="">Alle</option>
+                                    @foreach (var v in DistinctLocations)
+                                    {
+                                        <option value="@v">@v</option>
+                                    }
+                                </select>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var item in _mediaItems)
+                        @foreach (var item in FilteredAndSortedItems)
                         {
                             <tr class="@(item.Id == _selectedId ? "selected" : "")" @onclick="() => SelectItemAsync(item)" @oncontextmenu="(e) => ShowContextMenu(e, item)" @oncontextmenu:preventDefault="true">
                                 <td class="col-thumb">
@@ -291,6 +330,14 @@
     }
     .face-edit { display: flex; gap: 0.5rem; }
     .face-edit input { flex: 1; padding: 0.25rem 0.5rem; }
+    .filter-select {
+        width: 100%;
+        padding: 0.2rem 0.3rem;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        background: #fff;
+        font-size: 0.85em;
+    }
 </style>
 
 @code {
@@ -303,6 +350,94 @@
     private MediaItem? _selectedItem;
     private string? _previewUrl;
     private bool _isLoadingPreview;
+
+    // Sort state
+    private string? _sortColumn;
+    private bool _sortAscending = true;
+
+    // Filter state
+    private string _filterDate = string.Empty;
+    private string _filterType = string.Empty;
+    private string _filterGps = string.Empty;
+
+    private IEnumerable<MediaItem> FilteredAndSortedItems
+    {
+        get
+        {
+            IEnumerable<MediaItem> items = _mediaItems;
+
+            if (!string.IsNullOrWhiteSpace(_filterDate))
+                items = items.Where(i => i.CreatedAt.LocalDateTime.ToString("dd.MM.yyyy") == _filterDate);
+
+            if (!string.IsNullOrWhiteSpace(_filterType))
+                items = items.Where(i => i.ContentType == _filterType);
+
+            if (!string.IsNullOrWhiteSpace(_filterGps))
+                items = items.Where(i => FormatGpsLocation(i) == _filterGps);
+
+            if (_sortColumn is not null)
+            {
+                items = (_sortColumn, _sortAscending) switch
+                {
+                    ("date", true)  => items.OrderBy(i => i.CreatedAt),
+                    ("date", false) => items.OrderByDescending(i => i.CreatedAt),
+                    ("size", true)  => items.OrderBy(i => i.FileSizeBytes),
+                    ("size", false) => items.OrderByDescending(i => i.FileSizeBytes),
+                    ("type", true)  => items.OrderBy(i => i.ContentType, StringComparer.OrdinalIgnoreCase),
+                    ("type", false) => items.OrderByDescending(i => i.ContentType, StringComparer.OrdinalIgnoreCase),
+                    ("gps", true)   => items.OrderBy(i => FormatGpsLocation(i), StringComparer.OrdinalIgnoreCase),
+                    ("gps", false)  => items.OrderByDescending(i => FormatGpsLocation(i), StringComparer.OrdinalIgnoreCase),
+                    _ => items
+                };
+            }
+
+            return items;
+        }
+    }
+
+    private IReadOnlyList<string> DistinctDates =>
+        _mediaItems.Select(i => i.CreatedAt.LocalDateTime.ToString("dd.MM.yyyy"))
+            .Distinct().OrderDescending().ToList();
+
+    private IReadOnlyList<string> DistinctTypes =>
+        _mediaItems.Select(i => i.ContentType)
+            .Distinct().Order().ToList();
+
+    private IReadOnlyList<string> DistinctLocations =>
+        _mediaItems.Select(i => FormatGpsLocation(i))
+            .Where(l => l != "–")
+            .Distinct().Order().ToList();
+
+    private void ToggleSort(string column)
+    {
+        if (_sortColumn == column)
+        {
+            if (!_sortAscending)
+            {
+                // Third click: remove sort
+                _sortColumn = null;
+                _sortAscending = true;
+            }
+            else
+            {
+                _sortAscending = false;
+            }
+        }
+        else
+        {
+            _sortColumn = column;
+            _sortAscending = true;
+        }
+    }
+
+    private MarkupString SortIndicator(string column)
+    {
+        if (_sortColumn != column)
+            return new MarkupString("<span class=\"sort-indicator\">⇅</span>");
+        return _sortAscending
+            ? new MarkupString("<span class=\"sort-indicator active\">▲</span>")
+            : new MarkupString("<span class=\"sort-indicator active\">▼</span>");
+    }
 
     protected override async Task OnInitializedAsync()
     {

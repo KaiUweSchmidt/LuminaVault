@@ -40,7 +40,8 @@ public record CreateMediaMetadataRequest(
     string[] Tags,
     double? GpsLatitude,
     double? GpsLongitude,
-    string? GpsLocation = null);
+    string? GpsLocation = null,
+    DateTimeOffset? CapturedAt = null);
 
 public record UpdateMediaMetadataRequest(
     string? Title,

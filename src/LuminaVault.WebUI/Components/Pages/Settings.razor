@@ -2,6 +2,7 @@
 @using LuminaVault.WebUI.Services
 @inject MediaApiClient MediaApi
 @inject GalleryUserSettingsService GallerySettings
+@inject HostMediaPathService HostMediaPath
 @rendermode InteractiveServer
 
 <div class="settings-page">
@@ -18,6 +19,63 @@
                 Wenn aktiviert, werden beim Wechsel der Bildauswahl die erkannten Gesichter
                 automatisch mit Rahmen im Vorschaubild angezeigt.
             </p>
+        </div>
+    </section>
+
+    <section class="settings-section">
+        <h2>📂 Verzeichnis-Import :: Host-Pfad</h2>
+        <p class="settings-description" style="margin-bottom:1rem">
+            Legt den Pfad fest, unter dem der WebUI-Container auf ein Verzeichnis des Docker-Hosts zugreift.
+            Dieser Pfad wird als Startpfad auf der <a href="batch-import">Verzeichnis-Import-Seite</a> vorbelegt.
+        </p>
+
+        <div class="settings-card">
+            <label class="settings-toggle-label" for="hostPathInput" style="margin-bottom:0.5rem">
+                Container-interner Pfad (Einhängepunkt)
+            </label>
+            <div class="host-path-row">
+                <input id="hostPathInput"
+                       class="batch-dir-input"
+                       type="text"
+                       placeholder="/media/import"
+                       @bind="_editedPath"
+                       @bind:event="oninput" />
+                <button class="btn-upload" @onclick="SaveHostPath"
+                        disabled="@(string.IsNullOrWhiteSpace(_editedPath) || _editedPath == HostMediaPath.HostMediaPath)">
+                    Speichern
+                </button>
+            </div>
+
+            @if (_pathSaved)
+            {
+                <p class="result-success" style="margin-top:0.5rem">✅ Pfad gespeichert – aktiv bis zum nächsten Neustart des Containers.</p>
+            }
+
+            <div class="host-path-status" style="margin-top:0.75rem">
+                @if (HostMediaPath.IsMounted)
+                {
+                    <span class="host-path-badge mounted">✅ Eingehängt – Verzeichnis ist erreichbar</span>
+                }
+                else
+                {
+                    <span class="host-path-badge not-mounted">⚠️ Nicht eingehängt – Verzeichnis existiert nicht im Container</span>
+                }
+            </div>
+        </div>
+
+        <div class="settings-card" style="margin-top:1rem">
+            <p class="settings-toggle-label" style="margin-bottom:0.5rem">🐳 Docker-Konfiguration</p>
+            <p class="settings-description" style="margin-bottom:0.75rem">
+                Damit der Container dauerhaft auf ein Host-Verzeichnis zugreifen kann, muss ein
+                <strong>Bind-Mount</strong> in der <code>docker-compose.yml</code> konfiguriert sein.
+                Passe den folgenden Abschnitt im <code>webui</code>-Service an (<em>ersetze <code>/pfad/auf/dem/host</code>
+                durch den tatsächlichen Pfad auf deinem Docker-Host</em>) und starte den Container neu:
+            </p>
+            <pre class="host-path-snippet">@DockerComposeSnippet</pre>
+            <p class="settings-description" style="margin-top:0.5rem">
+                Alternativ: Umgebungsvariable beim Start setzen:
+            </p>
+            <pre class="host-path-snippet">HOST_MEDIA_PATH=/pfad/auf/dem/host docker compose up -d</pre>
         </div>
     </section>
 
@@ -95,6 +153,30 @@
         font-size: 0.85em;
         color: var(--color-text-muted, #8b8fa3);
     }
+    .host-path-row {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 0.25rem;
+    }
+    .host-path-snippet {
+        background: var(--color-bg, #0f1117);
+        border: 1px solid var(--color-border, #2a2e3a);
+        border-radius: 4px;
+        padding: 0.75rem 1rem;
+        font-size: 0.8rem;
+        white-space: pre-wrap;
+        word-break: break-all;
+        color: var(--color-text, #e4e6eb);
+    }
+    .host-path-badge {
+        display: inline-block;
+        padding: 0.2rem 0.65rem;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .host-path-badge.mounted     { background: rgba(38,176,80,.15); color: #26b050; }
+    .host-path-badge.not-mounted { background: rgba(255,193,7,.15);  color: #ffc107; }
 </style>
 
 @code {
@@ -102,6 +184,29 @@
     private bool _isPurging;
     private string? _resultMessage;
     private bool _isError;
+    private bool _pathSaved;
+    private string _editedPath = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        _editedPath = HostMediaPath.HostMediaPath;
+    }
+
+    private void SaveHostPath()
+    {
+        if (string.IsNullOrWhiteSpace(_editedPath)) return;
+        HostMediaPath.HostMediaPath = _editedPath;
+        _pathSaved = true;
+    }
+
+    private string DockerComposeSnippet =>
+        $"""
+        webui:
+          environment:
+            Import__HostMediaPath: {HostMediaPath.HostMediaPath}
+          volumes:
+            - /pfad/auf/dem/host:{HostMediaPath.HostMediaPath}:ro
+        """;
 
     private void ShowConfirmation()
     {
