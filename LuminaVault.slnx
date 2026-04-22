@@ -2,6 +2,8 @@
   <Folder Name="/docs/" />
   <Folder Name="/Projektmappenelemente/">
     <File Path="docker-compose.yml" />
+    <File Path="gisgraphy.ps1" />
+    <File Path="localbuild.ps1" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/LuminaVault.ApiGateway/LuminaVault.ApiGateway.csproj" />

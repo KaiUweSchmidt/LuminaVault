@@ -1,7 +1,18 @@
 Write-Host "=== LuminaVault Local Build ===" -ForegroundColor Cyan
 
-Write-Host "`n[1/5] Stopping containers..." -ForegroundColor Yellow
-docker compose down
+# Gisgraphy und dessen DB werden nicht neu gestartet, damit der OSM-Import erhalten bleibt.
+# Zum erstmaligen Starten: docker compose up -d gisgraphy-db gisgraphy
+# Zum Import:              docker compose --profile import up --no-deps gisgraphy-importer
+$appServices = @(
+    "nats", "postgres", "minio", "ollama",
+    "geocoding-service", "metadata-storage", "vector-search",
+    "thumbnail-generation", "object-recognition", "face-recognition",
+    "media-import", "api-gateway", "webui"
+)
+
+Write-Host "`n[1/5] Stopping app containers (Gisgraphy bleibt laufen)..." -ForegroundColor Yellow
+docker compose stop @appServices
+docker compose rm -f @appServices
 
 Write-Host "`n[2/5] Pruning unused images..." -ForegroundColor Yellow
 docker image prune -f
@@ -19,4 +30,4 @@ Write-Host "HOST_MEDIA_PATH = $env:HOST_MEDIA_PATH" -ForegroundColor Gray
 docker compose up -d
 
 Write-Host "`n[5/5] Streaming logs (Ctrl+C to stop)..." -ForegroundColor Green
-docker compose logs -f
+docker compose logs -f @appServices
