@@ -91,7 +91,8 @@ app.MapPut("/media/{id:guid}/gps", async (Guid id, UpdateGpsRequest request, Met
 
     metadata.GpsLatitude = request.GpsLatitude;
     metadata.GpsLongitude = request.GpsLongitude;
-    metadata.GpsLocation = request.GpsLocation;
+    if (!string.IsNullOrWhiteSpace(request.GpsLocation))
+        metadata.GpsLocation = request.GpsLocation;
     if (request.CapturedAt.HasValue)
         metadata.CreatedAt = request.CapturedAt.Value;
     metadata.UpdatedAt = DateTimeOffset.UtcNow;

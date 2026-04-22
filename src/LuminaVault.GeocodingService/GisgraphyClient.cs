@@ -25,9 +25,13 @@ public sealed class GisgraphyClient(HttpClient httpClient, ILogger<GisgraphyClie
             }
 
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            logger.LogDebug("[Gisgraphy] Antwort für ({Lat}, {Lng}): {Json}", latStr, lngStr, json);
             var result = JsonSerializer.Deserialize<GisgraphyResponse>(json);
             if (result?.Result is not { Count: > 0 } results)
+            {
+                logger.LogWarning("[Gisgraphy] Kein Ergebnis im JSON für ({Lat}, {Lng})", latStr, lngStr);
                 return null;
+            }
 
             var first = results[0];
 

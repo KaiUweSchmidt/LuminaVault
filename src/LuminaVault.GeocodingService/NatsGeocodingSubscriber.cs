@@ -106,8 +106,15 @@ public sealed class NatsGeocodingSubscriber(
         var capturedAt = ExtractDateTaken(imageStream);
 
         var locationName = await gisgraphy.ReverseGeocodeAsync(latitude, longitude, ct);
-        logger.LogInformation("[NATS:Geocoding] Ort ermittelt: '{Location}' für MediaId={MediaId}",
-            locationName ?? "<null>", evt.MediaId);
+        if (string.IsNullOrWhiteSpace(locationName))
+        {
+            logger.LogWarning("[NATS:Geocoding] Reverse-Geocoding lieferte kein Ergebnis für MediaId={MediaId} – Koordinaten werden ohne Ortsnamen gespeichert", evt.MediaId);
+        }
+        else
+        {
+            logger.LogInformation("[NATS:Geocoding] Ort ermittelt: '{Location}' für MediaId={MediaId}",
+                locationName, evt.MediaId);
+        }
 
         await metadataStorage.UpdateGpsAsync(evt.MediaId, latitude, longitude, locationName, capturedAt);
         logger.LogInformation("[NATS:Geocoding] MetadataStorage aktualisiert für MediaId={MediaId}", evt.MediaId);
