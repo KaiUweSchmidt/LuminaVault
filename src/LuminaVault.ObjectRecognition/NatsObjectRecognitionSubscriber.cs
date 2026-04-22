@@ -17,7 +17,6 @@ public sealed class NatsObjectRecognitionSubscriber(
     INatsJSContext js,
     IMinioClient minio,
     YoloObjectDetector yolo,
-    FaceRecognitionClient faceRecognition,
     MetadataStorageClient metadataStorage,
     ILogger<NatsObjectRecognitionSubscriber> logger) : BackgroundService
 {
@@ -107,13 +106,6 @@ public sealed class NatsObjectRecognitionSubscriber(
         {
             await metadataStorage.UpdateTagsAsync(evt.MediaId, [.. detection.Objects]);
             logger.LogInformation("[NATS:ObjRec] Tags in MetadataStorage aktualisiert für MediaId={MediaId}", evt.MediaId);
-        }
-
-        logger.LogInformation("[NATS:ObjRec] Schritt 3/3: Ergebnisse weiterleiten für MediaId={MediaId}", evt.MediaId);
-        if (detection.PersonDetected)
-        {
-            logger.LogInformation("[NATS:ObjRec] Person erkannt → FaceRecognition aufrufen für MediaId={MediaId}", evt.MediaId);
-            await faceRecognition.RecognizeFacesAsync(evt.MediaId, evt.StorageBucket, evt.StorageKey);
         }
 
         logger.LogInformation("[NATS:ObjRec] Objekterkennung abgeschlossen: MediaId={MediaId}", evt.MediaId);

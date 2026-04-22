@@ -35,4 +35,6 @@ public static class NatsConsumers
 {
     public const string ThumbnailGeneration = "thumbnail-generation";
     public const string ObjectRecognition = "object-recognition";
+    public const string FaceRecognition = "face-recognition";
+    public const string Geocoding = "geocoding";
 }

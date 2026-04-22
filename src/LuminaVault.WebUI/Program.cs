@@ -17,6 +17,9 @@ builder.Services.Configure<ImportSettings>(builder.Configuration.GetSection(Impo
 
 builder.Services.AddScoped<GalleryUserSettingsService>();
 
+// NATS queue stats service for Warteschlange page
+builder.Services.AddScoped<NatsQueueService>();
+
 // Pipeline completion tracking via NATS
 builder.Services.AddSingleton<PipelineCompletionTracker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<PipelineCompletionTracker>());
@@ -28,6 +31,10 @@ builder.Services.AddScoped<BatchImportCircuitHandler>();
 builder.Services.AddScoped<CircuitHandler>(sp => sp.GetRequiredService<BatchImportCircuitHandler>());
 
 builder.Services.AddHttpClient<MediaApiClient>(client =>
+    client.BaseAddress = new Uri(builder.Configuration["Services:ApiGateway"]
+        ?? "http://api-gateway:8080"));
+
+builder.Services.AddHttpClient<ServiceHealthChecker>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:ApiGateway"]
         ?? "http://api-gateway:8080"));
 

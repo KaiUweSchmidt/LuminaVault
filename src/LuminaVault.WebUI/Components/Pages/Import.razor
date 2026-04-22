@@ -14,11 +14,11 @@
          @ondragenter="HandleDragEnter"
          @ondragleave="HandleDragLeave"
          @ondragover:preventDefault>
-        <InputFile OnChange="HandleFilesSelected" multiple accept="image/*,video/*" />
+        <InputFile OnChange="HandleFilesSelected" multiple accept="image/*,video/*,.heic,.heif" />
         <div class="upload-placeholder">
             <span class="upload-icon">📁</span>
             <p>Dateien hierher ziehen oder klicken zum Auswählen</p>
-            <small>Unterstützt: JPG, PNG, GIF, WebP, MP4, MOV, AVI</small>
+            <small>Unterstützt: JPG, PNG, GIF, WebP, HEIC, MP4, MOV, AVI</small>
         </div>
     </div>
 
@@ -115,7 +115,8 @@
             }
 
             if (!file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) &&
-                !file.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+                !file.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) &&
+                !IsHeicFile(file.Name))
             {
                 continue;
             }
@@ -130,7 +131,7 @@
             {
                 BrowserFile = file,
                 FileName = file.Name,
-                ContentType = file.ContentType,
+                ContentType = IsHeicFile(file.Name) ? "image/heic" : file.ContentType,
                 FileSize = file.Size,
                 Status = "Pending"
             });
@@ -196,5 +197,12 @@
         public required long FileSize { get; init; }
         public string Status { get; set; } = "Pending";
         public string? ErrorMessage { get; set; }
+    }
+
+    private static bool IsHeicFile(string fileName)
+    {
+        var ext = Path.GetExtension(fileName);
+        return ext.Equals(".heic", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".heif", StringComparison.OrdinalIgnoreCase);
     }
 }

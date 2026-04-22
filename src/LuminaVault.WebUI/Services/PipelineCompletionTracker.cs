@@ -156,7 +156,9 @@ public sealed class PipelineCompletionTracker : IHostedService, IDisposable
         private static readonly HashSet<string> RequiredSteps =
         [
             PipelineSteps.ThumbnailGeneration,
-            PipelineSteps.ObjectRecognition
+            PipelineSteps.ObjectRecognition,
+            PipelineSteps.FaceRecognition,
+            PipelineSteps.Geocoding
         ];
 
         public void Record(string stepName, long durationMs)

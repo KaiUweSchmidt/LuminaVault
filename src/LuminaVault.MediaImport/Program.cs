@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Minio;
 using Minio.DataModel.Args;
 using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,8 +28,6 @@ builder.Services.AddHttpClient<MetadataStorageClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:MetadataStorage"]
         ?? "http://metadata-storage:8080"));
 
-builder.Services.AddSingleton<IGeocodingService, NatsGeocodingService>();
-
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
@@ -49,7 +48,7 @@ using (var scope = app.Services.CreateScope())
 
 app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     MediaImportDbContext db, MetadataStorageClient metadataStorage,
-    IGeocodingService geocoding, INatsJSContext js, ILogger<Program> logger) =>
+    INatsJSContext js, ILogger<Program> logger) =>
 {
     logger.LogInformation("[PIPELINE] ===== Import gestartet =====");
 
@@ -74,24 +73,52 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     logger.LogInformation("[PIPELINE] Schritt 1/3: Datei empfangen - {FileName} ({ContentType}, {Size} bytes)",
         file.FileName, file.ContentType, file.Length);
 
+    // HEIC/HEIF → JPEG Konvertierung
+    var actualFileName = file.FileName;
+    var actualContentType = file.ContentType;
+    Stream uploadStream;
+    long uploadSize;
+
+    if (HeicToJpegConverter.IsHeic(file.ContentType, file.FileName))
+    {
+        logger.LogInformation("[PIPELINE] HEIC erkannt – konvertiere zu JPEG: {FileName}", file.FileName);
+        var jpegStream = new MemoryStream();
+        await using (var heicStream = file.OpenReadStream())
+        {
+            await HeicToJpegConverter.ConvertToJpegAsync(heicStream, jpegStream);
+        }
+        uploadStream = jpegStream;
+        uploadSize = jpegStream.Length;
+        actualFileName = HeicToJpegConverter.ReplaceExtensionWithJpg(file.FileName);
+        actualContentType = "image/jpeg";
+        logger.LogInformation("[PIPELINE] HEIC→JPEG Konvertierung abgeschlossen: {NewFileName} ({NewSize} bytes)",
+            actualFileName, uploadSize);
+    }
+    else
+    {
+        uploadStream = file.OpenReadStream();
+        uploadSize = file.Length;
+    }
+
+    await using (uploadStream)
+    {
     const string bucket = "media";
     await EnsureBucketExistsAsync(minio, bucket);
 
     var mediaId = Guid.TryParse(form["mediaId"].ToString(), out var parsedId) ? parsedId : Guid.NewGuid();
-    var storageKey = $"{mediaId}/{file.FileName}";
+    var storageKey = $"{mediaId}/{actualFileName}";
 
     logger.LogInformation("[PIPELINE] Schritt 2/3: MinIO-Upload starten - MediaId={MediaId}, Bucket={Bucket}, Key={Key}",
         mediaId, bucket, storageKey);
 
     var sw = System.Diagnostics.Stopwatch.StartNew();
     var pipelineSw = System.Diagnostics.Stopwatch.StartNew();
-    await using var stream = file.OpenReadStream();
     await minio.PutObjectAsync(new PutObjectArgs()
         .WithBucket(bucket)
         .WithObject(storageKey)
-        .WithStreamData(stream)
-        .WithObjectSize(file.Length)
-        .WithContentType(file.ContentType));
+        .WithStreamData(uploadStream)
+        .WithObjectSize(uploadSize)
+        .WithContentType(actualContentType));
     sw.Stop();
 
     logger.LogInformation("[PIPELINE] Schritt 2/3: MinIO-Upload abgeschlossen in {ElapsedMs}ms", sw.ElapsedMilliseconds);
@@ -111,9 +138,9 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
         mediaItem = new MediaItem
         {
             Id = mediaId,
-            FileName = file.FileName,
-            ContentType = file.ContentType,
-            FileSizeBytes = file.Length,
+            FileName = actualFileName,
+            ContentType = actualContentType,
+            FileSizeBytes = uploadSize,
             ImportedAt = DateTimeOffset.UtcNow,
             StorageBucket = bucket,
             StorageKey = storageKey
@@ -124,52 +151,13 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     sw.Stop();
     logger.LogInformation("[PIPELINE] Schritt 3/3: DB-Speicherung abgeschlossen");
 
-    // Extract GPS coordinates
-    double? gpsLatitude = null;
-    double? gpsLongitude = null;
-    string? gpsLocation = null;
-    DateTimeOffset? capturedAt = null;
-
-    if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-    {
-        try
-        {
-            await using var dateStream = file.OpenReadStream();
-            capturedAt = ExifDateExtractor.ExtractDateTaken(dateStream);
-            if (capturedAt.HasValue)
-                logger.LogInformation("[PIPELINE] Aufnahmedatum extrahiert: {CapturedAt} für MediaId={MediaId}", capturedAt, mediaId);
-
-            await using var exifStream = file.OpenReadStream();
-            var gpsCoords = GpsExifExtractor.ExtractGps(exifStream);
-            if (gpsCoords.HasValue)
-            {
-                gpsLatitude = gpsCoords.Value.Latitude;
-                gpsLongitude = gpsCoords.Value.Longitude;
-                logger.LogInformation("[PIPELINE] GPS-Koordinaten extrahiert: ({Lat}, {Lon}) für MediaId={MediaId}",
-                    gpsLatitude, gpsLongitude, mediaId);
-
-                gpsLocation = await geocoding.GetLocationNameAsync(gpsCoords.Value.Latitude, gpsCoords.Value.Longitude);
-                if (gpsLocation is not null)
-                    logger.LogInformation("[PIPELINE] GPS-Ort ermittelt: '{Location}' für MediaId={MediaId}", gpsLocation, mediaId);
-                else
-                    logger.LogInformation("[PIPELINE] GPS-Ort konnte nicht ermittelt werden für MediaId={MediaId}", mediaId);
-            }
-            else
-            {
-                logger.LogInformation("[PIPELINE] Keine GPS-Daten in EXIF gefunden für MediaId={MediaId}", mediaId);
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "[PIPELINE] GPS-Extraktion fehlgeschlagen für MediaId={MediaId}", mediaId);
-        }
-    }
+    // GPS-Extraktion und Reverse-Geocoding werden asynchron vom GeocodingService via NATS erledigt
 
     // Create metadata entry in MetadataStorage service
     try
     {
-        await metadataStorage.CreateMetadataAsync(mediaId, title, file.FileName, file.ContentType,
-            file.Length, gpsLatitude, gpsLongitude, gpsLocation, capturedAt);
+        await metadataStorage.CreateMetadataAsync(mediaId, title, actualFileName, actualContentType,
+            uploadSize, gpsLatitude: null, gpsLongitude: null, gpsLocation: null, capturedAt: null);
         logger.LogInformation("[PIPELINE] MetadataStorage-Eintrag erstellt für MediaId={MediaId}", mediaId);
     }
     catch (Exception ex)
@@ -183,9 +171,9 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     {
         var importedEvent = new MediaImportedEvent(
             mediaId,
-            file.FileName,
-            file.ContentType,
-            file.Length,
+            actualFileName,
+            actualContentType,
+            uploadSize,
             bucket,
             storageKey);
         var ack = await js.PublishAsync(NatsSubjects.MediaImported, importedEvent);
@@ -200,8 +188,9 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
 
     pipelineSw.Stop();
     logger.LogInformation("[PIPELINE] ===== Import abgeschlossen: MediaId={MediaId}, Datei={FileName}, Gesamtdauer={TotalMs}ms =====",
-        mediaId, file.FileName, pipelineSw.ElapsedMilliseconds);
+        mediaId, actualFileName, pipelineSw.ElapsedMilliseconds);
     return Results.Created($"/media/{mediaId}", mediaItem);
+    } // await using (uploadStream)
 }).DisableAntiforgery();
 
 app.MapGet("/media/{id:guid}", async (Guid id, MediaImportDbContext db) =>
@@ -227,7 +216,7 @@ app.MapGet("/media/{id:guid}/url", async (Guid id, MediaImportDbContext db, IMin
     return Results.File(ms, item.ContentType, item.FileName);
 });
 
-app.MapDelete("/admin/purge-all", async (MediaImportDbContext db, IMinioClient minio, ILogger<Program> logger) =>
+app.MapDelete("/admin/purge-all", async (MediaImportDbContext db, IMinioClient minio, INatsJSContext js, ILogger<Program> logger) =>
 {
     var deletedItems = await db.MediaItems.ExecuteDeleteAsync();
     logger.LogWarning("[ADMIN] Purge-All: {Count} MediaItems aus DB gelöscht", deletedItems);
@@ -255,6 +244,19 @@ app.MapDelete("/admin/purge-all", async (MediaImportDbContext db, IMinioClient m
         }
 
         logger.LogWarning("[ADMIN] Purge-All: {Count} Objekte aus Bucket '{Bucket}' gelöscht", objects.Count, bucket);
+    }
+
+    // Purge all messages from the JetStream stream so consumers don't process stale events
+    try
+    {
+        var stream = await js.GetStreamAsync(NatsStreams.MediaPipeline);
+        var purgeResponse = await stream.PurgeAsync(new StreamPurgeRequest());
+        logger.LogWarning("[ADMIN] Purge-All: {Count} Messages aus JetStream-Stream '{Stream}' gelöscht",
+            purgeResponse.Purged, NatsStreams.MediaPipeline);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "[ADMIN] Purge-All: JetStream-Purge fehlgeschlagen (Stream existiert möglicherweise nicht)");
     }
 
     return Results.Ok(new { DeletedMediaItems = deletedItems, DeletedObjects = deletedObjects });

@@ -44,10 +44,7 @@ public sealed class YoloFaceDetectorFixture : IDisposable
 /// </summary>
 public class YoloFaceDetectorVisualTests : IClassFixture<YoloFaceDetectorFixture>
 {
-    private static readonly string SolutionRoot = Path.GetFullPath(
-        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-
-    private static readonly string TestDataDir = Path.Combine(SolutionRoot, "tests", "testdata");
+    private static readonly string TestDataDir = Path.Combine(AppContext.BaseDirectory, "Testdaten");
     private static readonly string OutputDir = Path.Combine(TestDataDir, "output");
 
     private readonly YoloFaceDetectorFixture _fixture;
