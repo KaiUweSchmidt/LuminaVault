@@ -64,7 +64,7 @@ services:
       retries: 5
 
   gisgraphy:
-    image: gisgraphy/gisgraphy:latest
+    image: gisgraphy/gisgraphyofficial:latest
     environment:
       SPRING_DATASOURCE_URL: "jdbc:postgresql://gisgraphy-db:5432/gisgraphy"
       SPRING_DATASOURCE_USERNAME: gisgraphy
@@ -106,8 +106,7 @@ services:
       sh -c "
         apk add --no-cache curl wget &&
         echo '=== Downloading Europe OSM PBF from Geofabrik ===' &&
-        wget -q --show-progress -O /osm-data/europe-latest.osm.pbf
-          https://download.geofabrik.de/europe-latest.osm.pbf &&
+        wget -q --show-progress -O /osm-data/europe-latest.osm.pbf https://download.geofabrik.de/europe-latest.osm.pbf &&
         echo '=== Download complete – triggering Gisgraphy import ===' &&
         curl -sf 'http://gisgraphy:8080/api/import?type=osm' &&
         echo '=== Import started. Monitor progress at http://localhost:8080/public/admin.html ==='
