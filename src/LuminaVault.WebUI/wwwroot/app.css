@@ -118,6 +118,19 @@ html, body {
     font-size: 0.84rem;
 }
 
+.nav-group-label {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: default;
+    user-select: none;
+    margin-top: 0.375rem;
+}
+
 /* ===== Landing Page ===== */
 .landing {
     max-width: 960px;

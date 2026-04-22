@@ -1,0 +1,253 @@
+@page "/system/warteschlange"
+@using LuminaVault.WebUI.Services
+@inject NatsQueueService QueueService
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+
+<PageTitle>Warteschlange – Systemübersicht</PageTitle>
+
+<div class="queue-page">
+    <h1>📋 Warteschlange</h1>
+    <p class="queue-subtitle">JetStream-Verarbeitungsstatus je NATS-Consumer — wird alle 3 Sekunden aktualisiert.</p>
+
+    @if (_loading && _consumers.Count == 0)
+    {
+        <p class="queue-loading">Lade Daten…</p>
+    }
+    else if (_consumers.Count == 0)
+    {
+        <p class="queue-empty">Keine Consumer-Daten verfügbar.</p>
+    }
+    else
+    {
+        <div class="queue-grid">
+            @foreach (var c in _consumers)
+            {
+                <div class="queue-card">
+                    <div class="queue-card-header">
+                        <span class="queue-consumer-name">@c.ConsumerName</span>
+                        @if (!c.IsAvailable)
+                        {
+                            <span class="queue-badge queue-badge-error">Nicht erreichbar</span>
+                        }
+                    </div>
+
+                    @if (!c.IsAvailable)
+                    {
+                        <p class="queue-error">@c.Error</p>
+                    }
+                    else
+                    {
+                        <div class="queue-stats">
+                            <div class="queue-stat queue-stat-pending">
+                                <span class="queue-stat-icon">⏳</span>
+                                <div class="queue-stat-body">
+                                    <span class="queue-stat-label">Bereitstehend</span>
+                                    <span class="queue-stat-value">@c.NumPending</span>
+                                </div>
+                            </div>
+                            <div class="queue-stat queue-stat-running">
+                                <span class="queue-stat-icon">⚙️</span>
+                                <div class="queue-stat-body">
+                                    <span class="queue-stat-label">Laufend</span>
+                                    <span class="queue-stat-value">@c.NumAckPending</span>
+                                </div>
+                            </div>
+                            <div class="queue-stat queue-stat-done">
+                                <span class="queue-stat-icon">✅</span>
+                                <div class="queue-stat-body">
+                                    <span class="queue-stat-label">Fertig</span>
+                                    <span class="queue-stat-value">@c.NumCompleted</span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    <p class="queue-last-updated">
+        Zuletzt aktualisiert: @(_lastUpdated?.ToString("HH:mm:ss") ?? "–")
+    </p>
+</div>
+
+<style>
+    .queue-page {
+        max-width: 900px;
+    }
+
+    .queue-page h1 {
+        margin-bottom: 0.25rem;
+    }
+
+    .queue-subtitle {
+        color: var(--color-text-muted, #8b8fa3);
+        font-size: 0.88rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .queue-loading,
+    .queue-empty {
+        color: var(--color-text-muted, #8b8fa3);
+        font-style: italic;
+    }
+
+    .queue-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 1.25rem;
+    }
+
+    .queue-card {
+        background: var(--color-surface, #1a1d27);
+        border: 1px solid var(--color-border, #2a2e3a);
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+    }
+
+    .queue-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        gap: 0.5rem;
+    }
+
+    .queue-consumer-name {
+        font-weight: 700;
+        font-size: 0.95rem;
+        word-break: break-word;
+    }
+
+    .queue-badge {
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        white-space: nowrap;
+    }
+
+    .queue-badge-error {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+
+    .queue-error {
+        font-size: 0.8rem;
+        color: #ef4444;
+    }
+
+    .queue-stats {
+        display: flex;
+        flex-direction: column;
+        gap: 0.625rem;
+    }
+
+    .queue-stat {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        background: var(--color-surface-hover, #242836);
+    }
+
+    .queue-stat-icon {
+        font-size: 1.2rem;
+        width: 1.5rem;
+        text-align: center;
+        flex-shrink: 0;
+    }
+
+    .queue-stat-body {
+        display: flex;
+        flex: 1;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .queue-stat-label {
+        font-size: 0.85rem;
+        color: var(--color-text-muted, #8b8fa3);
+    }
+
+    .queue-stat-value {
+        font-size: 1.15rem;
+        font-weight: 700;
+        min-width: 2ch;
+        text-align: right;
+    }
+
+    .queue-stat-pending .queue-stat-value { color: #f59e0b; }
+    .queue-stat-running .queue-stat-value { color: #6c63ff; }
+    .queue-stat-done    .queue-stat-value { color: #26b050; }
+
+    .queue-last-updated {
+        margin-top: 1.25rem;
+        font-size: 0.78rem;
+        color: var(--color-text-muted, #8b8fa3);
+    }
+</style>
+
+@code {
+    private List<ConsumerQueueInfo> _consumers = [];
+    private bool _loading;
+    private DateTime? _lastUpdated;
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+        await RefreshAsync();
+
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        _ = RunTimerAsync(_cts.Token);
+    }
+
+    private async Task RunTimerAsync(CancellationToken ct)
+    {
+        if (_timer is null) return;
+
+        try
+        {
+            while (await _timer.WaitForNextTickAsync(ct))
+            {
+                await RefreshAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Component is disposing — expected
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        _loading = true;
+        try
+        {
+            var stats = await QueueService.GetConsumerStatsAsync();
+            _consumers = stats.ToList();
+            _lastUpdated = DateTime.Now;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_cts is not null)
+        {
+            await _cts.CancelAsync();
+            _cts.Dispose();
+        }
+
+        _timer?.Dispose();
+    }
+}

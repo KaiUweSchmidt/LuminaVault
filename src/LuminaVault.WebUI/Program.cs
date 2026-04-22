@@ -17,6 +17,9 @@ builder.Services.Configure<ImportSettings>(builder.Configuration.GetSection(Impo
 
 builder.Services.AddScoped<GalleryUserSettingsService>();
 
+// NATS queue stats service for Warteschlange page
+builder.Services.AddScoped<NatsQueueService>();
+
 // Pipeline completion tracking via NATS
 builder.Services.AddSingleton<PipelineCompletionTracker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<PipelineCompletionTracker>());
