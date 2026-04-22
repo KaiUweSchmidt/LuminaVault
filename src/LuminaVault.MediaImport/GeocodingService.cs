@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using LuminaVault.ServiceDefaults;
+using NATS.Client.Core;
 
 namespace LuminaVault.MediaImport;
 
@@ -15,8 +17,38 @@ public interface IGeocodingService
 }
 
 /// <summary>
+/// Reverse-geocoding implementation that delegates to the dedicated
+/// <c>geocoding-service</c> via NATS request/reply.
+/// </summary>
+public sealed class NatsGeocodingService(INatsConnection nats, ILogger<NatsGeocodingService> logger) : IGeocodingService
+{
+    public async Task<string?> GetLocationNameAsync(double latitude, double longitude, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var reply = await nats.RequestAsync<ReverseGeocodingRequest, ReverseGeocodingReply>(
+                NatsSubjects.ReverseGeocodingRequest,
+                new ReverseGeocodingRequest(latitude, longitude),
+                cancellationToken: cancellationToken);
+
+            return reply.Data?.LocationName;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[GPS] NATS-Geocoding fehlgeschlagen");
+            return null;
+        }
+    }
+}
+
+/// <summary>
 /// Reverse-geocoding implementation that uses the OpenStreetMap Nominatim API.
 /// </summary>
+/// <remarks>
+/// Obsolete: Use <see cref="NatsGeocodingService"/> instead, which delegates to the
+/// dedicated <c>geocoding-service</c> container via NATS.
+/// </remarks>
+[Obsolete("Use NatsGeocodingService, which calls the local geocoding-service via NATS.")]
 public class NominatimGeocodingService(HttpClient httpClient, ILogger<NominatimGeocodingService> logger) : IGeocodingService
 {
     public async Task<string?> GetLocationNameAsync(double latitude, double longitude, CancellationToken cancellationToken = default)

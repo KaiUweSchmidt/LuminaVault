@@ -49,6 +49,89 @@ services:
       timeout: 5s
       retries: 10
 
+  gisgraphy-db:
+    image: postgis/postgis:17-3.4-alpine
+    environment:
+      POSTGRES_USER: gisgraphy
+      POSTGRES_PASSWORD: gisgraphy
+      POSTGRES_DB: gisgraphy
+    volumes:
+      - gisgraphy-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gisgraphy -d gisgraphy"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  gisgraphy:
+    image: gisgraphy/gisgraphyofficial:latest
+    environment:
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://gisgraphy-db:5432/gisgraphy"
+      SPRING_DATASOURCE_USERNAME: gisgraphy
+      SPRING_DATASOURCE_PASSWORD: gisgraphy
+    volumes:
+      - gisgraphy-osm-data:/osm-data
+    depends_on:
+      gisgraphy-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/reversegeocoding/reversegeocode?lat=48&lng=11&format=json || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # One-shot Europe OSM importer – only runs when the 'import' profile is active.
+  #
+  # Usage (run once after the stack is up):
+  #   docker compose --profile import up --no-deps gisgraphy-importer
+  #
+  # What it does:
+  #   1. Downloads the Europe OSM PBF extract from Geofabrik (~30 GB, may take
+  #      a long time depending on your connection).
+  #   2. Calls the Gisgraphy import API to kick off the data import into
+  #      gisgraphy-db.  The import itself can take several hours.
+  #
+  # Note: Sufficient disk space (≥100 GB) and RAM (≥8 GB) are recommended for
+  # a full Europe import.  For testing, replace the Geofabrik URL with a smaller
+  # regional extract, e.g.:
+  #   https://download.geofabrik.de/europe/germany-latest.osm.pbf
+  # ──────────────────────────────────────────────────────────────────────────────
+  gisgraphy-importer:
+    image: alpine:latest
+    profiles:
+      - import
+    command: >
+      sh -c "
+        apk add --no-cache curl wget &&
+        echo '=== Downloading Europe OSM PBF from Geofabrik ===' &&
+        wget -q --show-progress -O /osm-data/europe-latest.osm.pbf https://download.geofabrik.de/europe-latest.osm.pbf &&
+        echo '=== Download complete – triggering Gisgraphy import ===' &&
+        curl -sf 'http://gisgraphy:8080/api/import?type=osm' &&
+        echo '=== Import started. Monitor progress at http://localhost:8080/public/admin.html ==='
+      "
+    volumes:
+      - gisgraphy-osm-data:/osm-data
+    depends_on:
+      gisgraphy:
+        condition: service_healthy
+    restart: "no"
+
+  geocoding-service:
+    build:
+      context: .
+      dockerfile: src/LuminaVault.GeocodingService/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Services__Gisgraphy: http://gisgraphy:8080
+      Nats__Url: nats://nats:4222
+    depends_on:
+      nats:
+        condition: service_healthy
+      gisgraphy:
+        condition: service_started
+
   metadata-storage:
     build:
       context: .
@@ -154,6 +237,8 @@ services:
         condition: service_started
       nats:
         condition: service_healthy
+      geocoding-service:
+        condition: service_started
 
   api-gateway:
     build:
@@ -201,4 +286,6 @@ volumes:
   postgres-data:
   minio-data:
   ollama-data:
+  gisgraphy-data:
+  gisgraphy-osm-data:
   webui-keys:
