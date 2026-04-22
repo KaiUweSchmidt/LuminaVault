@@ -68,7 +68,7 @@
     }
 
     <p class="queue-last-updated">
-        Zuletzt aktualisiert: @(_lastUpdated?.ToString("HH:mm:ss") ?? "–")
+        Zuletzt aktualisiert: @(_lastUpdated?.ToString("HH:mm:ss") + " UTC" ?? "–")
     </p>
 </div>
 
@@ -232,7 +232,7 @@
         {
             var stats = await QueueService.GetConsumerStatsAsync();
             _consumers = stats.ToList();
-            _lastUpdated = DateTime.Now;
+            _lastUpdated = DateTime.UtcNow;
         }
         finally
         {

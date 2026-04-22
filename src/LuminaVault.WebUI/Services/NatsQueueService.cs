@@ -36,7 +36,7 @@ public sealed class NatsQueueService(INatsJSContext js)
                 // Fertig (done) = total deliveries so far minus what is still in-flight
                 var numPending = (long)info.NumPending;
                 var numAckPending = info.NumAckPending;
-                var numCompleted = (long)Math.Max(0UL, info.Delivered.ConsumerSeq - (ulong)numAckPending);
+                var numCompleted = (long)Math.Max(0UL, info.Delivered.ConsumerSeq - (ulong)Math.Max(0, numAckPending));
 
                 results.Add(new ConsumerQueueInfo
                 {
