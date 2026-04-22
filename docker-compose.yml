@@ -49,15 +49,28 @@ services:
       timeout: 5s
       retries: 10
 
+  gisgraphy-db:
+    image: postgis/postgis:17-3.4-alpine
+    environment:
+      POSTGRES_USER: gisgraphy
+      POSTGRES_PASSWORD: gisgraphy
+      POSTGRES_DB: gisgraphy
+    volumes:
+      - gisgraphy-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gisgraphy -d gisgraphy"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   gisgraphy:
     image: gisgraphy/gisgraphy:latest
     environment:
-      GISGRAPHY_SCHEMA: luminavault_gisgraphy
-      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/luminavault-metadata"
-      SPRING_DATASOURCE_USERNAME: luminavault
-      SPRING_DATASOURCE_PASSWORD: luminavault
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://gisgraphy-db:5432/gisgraphy"
+      SPRING_DATASOURCE_USERNAME: gisgraphy
+      SPRING_DATASOURCE_PASSWORD: gisgraphy
     depends_on:
-      postgres:
+      gisgraphy-db:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/reversegeocoding/reversegeocode?lat=48&lng=11&format=json || exit 1"]
@@ -72,12 +85,9 @@ services:
       dockerfile: src/LuminaVault.GeocodingService/Dockerfile
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__luminavault-metadata: "Host=postgres;Database=luminavault-metadata;Username=luminavault;Password=luminavault"
       Services__Gisgraphy: http://gisgraphy:8080
       Nats__Url: nats://nats:4222
     depends_on:
-      postgres:
-        condition: service_healthy
       nats:
         condition: service_healthy
       gisgraphy:
@@ -237,4 +247,5 @@ volumes:
   postgres-data:
   minio-data:
   ollama-data:
+  gisgraphy-data:
   webui-keys:

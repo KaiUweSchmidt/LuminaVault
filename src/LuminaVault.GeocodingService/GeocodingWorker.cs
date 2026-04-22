@@ -1,5 +1,5 @@
 using LuminaVault.ServiceDefaults;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using NATS.Client.Core;
 
 namespace LuminaVault.GeocodingService;
@@ -7,19 +7,21 @@ namespace LuminaVault.GeocodingService;
 /// <summary>
 /// Background service that subscribes to <c>geocoding.reverse</c> NATS requests,
 /// resolves coordinates via the local Gisgraphy instance, and replies with a
-/// <see cref="ReverseGeocodingReply"/>.  Results are cached in PostgreSQL so that
-/// repeated lookups for the same location never hit Gisgraphy twice.
+/// <see cref="ReverseGeocodingReply"/>.  Results are cached in-memory so that
+/// repeated lookups for the same location never hit Gisgraphy twice within a session.
 /// </summary>
 public sealed class GeocodingWorker(
     INatsConnection nats,
     GisgraphyClient gisgraphy,
-    IServiceScopeFactory scopeFactory,
+    IMemoryCache cache,
     ILogger<GeocodingWorker> logger) : BackgroundService
 {
     /// <summary>
     /// Coordinates are rounded to 3 decimal places before cache lookup (~111 m grid).
     /// </summary>
     private const int CoordinatePrecision = 3;
+
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromHours(24);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -61,32 +63,17 @@ public sealed class GeocodingWorker(
     {
         var latR = Math.Round(latitude, CoordinatePrecision);
         var lonR = Math.Round(longitude, CoordinatePrecision);
+        var cacheKey = $"{latR}:{lonR}";
 
-        using var scope = scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<GeocodingDbContext>();
-
-        // Try cache first
-        var cached = await db.GeocodingCache
-            .FirstOrDefaultAsync(e => e.LatitudeRounded == latR && e.LongitudeRounded == lonR, ct);
-
-        if (cached is not null)
+        if (cache.TryGetValue(cacheKey, out string? cached))
         {
-            logger.LogDebug("[Geocoding] Cache-Treffer: '{Location}'", cached.LocationName);
-            return cached.LocationName;
+            logger.LogDebug("[Geocoding] Cache-Treffer: '{Location}'", cached);
+            return cached;
         }
 
-        // Resolve via Gisgraphy
         var locationName = await gisgraphy.ReverseGeocodeAsync(latitude, longitude, ct);
 
-        // Persist to cache
-        db.GeocodingCache.Add(new GeocodingCacheEntry
-        {
-            LatitudeRounded = latR,
-            LongitudeRounded = lonR,
-            LocationName = locationName,
-            CachedAt = DateTimeOffset.UtcNow
-        });
-        await db.SaveChangesAsync(ct);
+        cache.Set(cacheKey, locationName, CacheDuration);
 
         return locationName;
     }
