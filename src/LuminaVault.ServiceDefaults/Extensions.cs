@@ -1,9 +1,12 @@
+using LuminaVault.ServiceDefaults;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using NATS.Client.Core;
+using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
 using NATS.Client.Serializers.Json;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
@@ -116,7 +119,37 @@ public static class Extensions
             return new NatsConnection(opts);
         });
 
+        builder.Services.AddSingleton<INatsJSContext>(sp =>
+        {
+            var nats = sp.GetRequiredService<INatsConnection>();
+            return new NatsJSContext((NatsConnection)nats);
+        });
+
         return builder;
+    }
+
+    /// <summary>
+    /// Ensures the JetStream stream and durable consumers exist.
+    /// Call once during application startup in services that publish or consume from JetStream.
+    /// </summary>
+    public static async Task EnsureJetStreamResourcesAsync(INatsJSContext js)
+    {
+        var streamConfig = new StreamConfig(NatsStreams.MediaPipeline, [NatsSubjects.MediaImported])
+        {
+            Retention = StreamConfigRetention.Interest,
+            MaxMsgs = 100_000,
+            Storage = StreamConfigStorage.File,
+            DuplicateWindow = TimeSpan.FromMinutes(5),
+        };
+
+        try
+        {
+            await js.GetStreamAsync(NatsStreams.MediaPipeline);
+        }
+        catch (NatsJSApiException ex) when (ex.Error.Code == 404)
+        {
+            await js.CreateStreamAsync(streamConfig);
+        }
     }
 
     public static WebApplication MapDefaultEndpoints(this WebApplication app)

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Minio;
 using Minio.DataModel.Args;
-using NATS.Client.Core;
+using NATS.Client.JetStream;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,14 +22,6 @@ builder.Services.AddSingleton<IMinioClient>(sp =>
         .WithCredentials(config["AccessKey"], config["SecretKey"])
         .Build();
 });
-
-builder.Services.AddHttpClient<ThumbnailServiceClient>(client =>
-    client.BaseAddress = new Uri(builder.Configuration["Services:ThumbnailGeneration"]
-        ?? "http://thumbnail-generation:8080"));
-
-builder.Services.AddHttpClient<ObjectRecognitionServiceClient>(client =>
-    client.BaseAddress = new Uri(builder.Configuration["Services:ObjectRecognition"]
-        ?? "http://object-recognition:8080"));
 
 builder.Services.AddHttpClient<MetadataStorageClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:MetadataStorage"]
@@ -49,10 +41,15 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
+// Ensure JetStream stream exists before accepting requests
+{
+    var js = app.Services.GetRequiredService<INatsJSContext>();
+    await Extensions.EnsureJetStreamResourcesAsync(js);
+}
+
 app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
-    MediaImportDbContext db, ThumbnailServiceClient thumbnails,
-    ObjectRecognitionServiceClient recognition, MetadataStorageClient metadataStorage,
-    IGeocodingService geocoding, INatsConnection nats, ILogger<Program> logger) =>
+    MediaImportDbContext db, MetadataStorageClient metadataStorage,
+    IGeocodingService geocoding, INatsJSContext js, ILogger<Program> logger) =>
 {
     logger.LogInformation("[PIPELINE] ===== Import gestartet =====");
 
@@ -74,7 +71,7 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     if (string.IsNullOrWhiteSpace(title))
         title = Path.GetFileNameWithoutExtension(file.FileName);
 
-    logger.LogInformation("[PIPELINE] Schritt 1/5: Datei empfangen - {FileName} ({ContentType}, {Size} bytes)",
+    logger.LogInformation("[PIPELINE] Schritt 1/3: Datei empfangen - {FileName} ({ContentType}, {Size} bytes)",
         file.FileName, file.ContentType, file.Length);
 
     const string bucket = "media";
@@ -83,7 +80,7 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     var mediaId = Guid.TryParse(form["mediaId"].ToString(), out var parsedId) ? parsedId : Guid.NewGuid();
     var storageKey = $"{mediaId}/{file.FileName}";
 
-    logger.LogInformation("[PIPELINE] Schritt 2/5: MinIO-Upload starten - MediaId={MediaId}, Bucket={Bucket}, Key={Key}",
+    logger.LogInformation("[PIPELINE] Schritt 2/3: MinIO-Upload starten - MediaId={MediaId}, Bucket={Bucket}, Key={Key}",
         mediaId, bucket, storageKey);
 
     var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -97,17 +94,16 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
         .WithContentType(file.ContentType));
     sw.Stop();
 
-    logger.LogInformation("[PIPELINE] Schritt 2/5: MinIO-Upload abgeschlossen in {ElapsedMs}ms", sw.ElapsedMilliseconds);
-    await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.MinioUpload, sw.ElapsedMilliseconds, true, logger);
+    logger.LogInformation("[PIPELINE] Schritt 2/3: MinIO-Upload abgeschlossen in {ElapsedMs}ms", sw.ElapsedMilliseconds);
 
-    logger.LogInformation("[PIPELINE] Schritt 3/5: MediaItem in DB speichern - MediaId={MediaId}", mediaId);
+    logger.LogInformation("[PIPELINE] Schritt 3/3: MediaItem in DB speichern - MediaId={MediaId}", mediaId);
     sw.Restart();
     var existingItem = await db.MediaItems.FindAsync(mediaId);
     MediaItem mediaItem;
     if (existingItem is not null)
     {
         // Idempotent retry — the previous attempt already persisted this item.
-        logger.LogInformation("[PIPELINE] Schritt 3/5: MediaItem existiert bereits (Retry erkannt) - MediaId={MediaId}", mediaId);
+        logger.LogInformation("[PIPELINE] Schritt 3/3: MediaItem existiert bereits (Retry erkannt) - MediaId={MediaId}", mediaId);
         mediaItem = existingItem;
     }
     else
@@ -126,10 +122,9 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
         await db.SaveChangesAsync();
     }
     sw.Stop();
-    logger.LogInformation("[PIPELINE] Schritt 3/5: DB-Speicherung abgeschlossen");
-    await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.DatabaseSave, sw.ElapsedMilliseconds, true, logger);
+    logger.LogInformation("[PIPELINE] Schritt 3/3: DB-Speicherung abgeschlossen");
 
-    // Extract GPS coordinates and location name from EXIF (images only)
+    // Extract GPS coordinates
     double? gpsLatitude = null;
     double? gpsLongitude = null;
     string? gpsLocation = null;
@@ -182,56 +177,8 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
         logger.LogWarning(ex, "[PIPELINE] MetadataStorage-Eintrag FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
     }
 
-    // Generate thumbnail (images and videos)
-    var isImageOrVideo = file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
-                      || file.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
-    if (isImageOrVideo)
-    {
-        logger.LogInformation("[PIPELINE] Schritt 4/5: Thumbnail-Generierung starten - MediaId={MediaId}", mediaId);
-        try
-        {
-            sw.Restart();
-            await thumbnails.RequestThumbnailAsync(mediaId, bucket, storageKey, file.ContentType);
-            sw.Stop();
-            logger.LogInformation("[PIPELINE] Schritt 4/5: Thumbnail-Generierung abgeschlossen in {ElapsedMs}ms", sw.ElapsedMilliseconds);
-            await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.ThumbnailGeneration, sw.ElapsedMilliseconds, true, logger);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "[PIPELINE] Schritt 4/5: Thumbnail-Generierung FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
-            await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.ThumbnailGeneration, 0, false, logger);
-        }
-    }
-    else
-    {
-        logger.LogInformation("[PIPELINE] Schritt 4/5: Thumbnail übersprungen (kein Bild/Video)");
-    }
-
-    // Object recognition (images only)
-    if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-    {
-        logger.LogInformation("[PIPELINE] Schritt 5/5: ObjectRecognition starten - MediaId={MediaId}", mediaId);
-        try
-        {
-            sw.Restart();
-            await recognition.RecognizeAsync(mediaId, file.ContentType, bucket, storageKey);
-            sw.Stop();
-            logger.LogInformation("[PIPELINE] Schritt 5/5: ObjectRecognition abgeschlossen in {ElapsedMs}ms", sw.ElapsedMilliseconds);
-            await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.ObjectRecognition, sw.ElapsedMilliseconds, true, logger);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "[PIPELINE] Schritt 5/5: ObjectRecognition FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
-            await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.ObjectRecognition, 0, false, logger);
-        }
-    }
-    else
-    {
-        logger.LogInformation("[PIPELINE] Schritt 5/5: ObjectRecognition übersprungen (kein Bild)");
-    }
-
-    // Publish media.imported event via NATS so that subscribers (thumbnail-generation,
-    // object-recognition) can react asynchronously.
+    // Publish media.imported event via NATS JetStream — downstream services (thumbnail-generation,
+    // object-recognition) consume with durable consumers and explicit Ack.
     try
     {
         var importedEvent = new MediaImportedEvent(
@@ -241,18 +188,17 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
             file.Length,
             bucket,
             storageKey);
-        await nats.PublishAsync(NatsSubjects.MediaImported, importedEvent);
-        logger.LogInformation("[PIPELINE] NATS-Event '{Subject}' veröffentlicht für MediaId={MediaId}",
-            NatsSubjects.MediaImported, mediaId);
+        var ack = await js.PublishAsync(NatsSubjects.MediaImported, importedEvent);
+        ack.EnsureSuccess();
+        logger.LogInformation("[PIPELINE] JetStream-Event '{Subject}' veröffentlicht für MediaId={MediaId}, Seq={Seq}",
+            NatsSubjects.MediaImported, mediaId, ack.Seq);
     }
     catch (Exception ex)
     {
-        logger.LogWarning(ex, "[PIPELINE] NATS-Publish FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
+        logger.LogWarning(ex, "[PIPELINE] JetStream-Publish FEHLGESCHLAGEN für MediaId={MediaId}", mediaId);
     }
 
     pipelineSw.Stop();
-    await PublishStepCompletedAsync(nats, mediaId, PipelineSteps.PipelineComplete, pipelineSw.ElapsedMilliseconds, true, logger);
-
     logger.LogInformation("[PIPELINE] ===== Import abgeschlossen: MediaId={MediaId}, Datei={FileName}, Gesamtdauer={TotalMs}ms =====",
         mediaId, file.FileName, pipelineSw.ElapsedMilliseconds);
     return Results.Created($"/media/{mediaId}", mediaItem);
@@ -321,22 +267,6 @@ static async Task EnsureBucketExistsAsync(IMinioClient minio, string bucket)
     bool exists = await minio.BucketExistsAsync(new BucketExistsArgs().WithBucket(bucket));
     if (!exists)
         await minio.MakeBucketAsync(new MakeBucketArgs().WithBucket(bucket));
-}
-
-static async Task PublishStepCompletedAsync(
-    INatsConnection nats, Guid mediaId, string stepName,
-    long durationMs, bool success, ILogger logger)
-{
-    try
-    {
-        var stepEvent = new PipelineStepCompletedEvent(
-            mediaId, stepName, durationMs, success, DateTimeOffset.UtcNow);
-        await nats.PublishAsync(NatsSubjects.PipelineStepCompleted, stepEvent);
-    }
-    catch (Exception ex)
-    {
-        logger.LogWarning(ex, "[PIPELINE] Step-Completion-Event konnte nicht veröffentlicht werden: {Step}", stepName);
-    }
 }
 
 public partial class Program { }

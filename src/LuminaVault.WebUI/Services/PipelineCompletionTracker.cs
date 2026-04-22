@@ -8,6 +8,8 @@ namespace LuminaVault.WebUI.Services;
 /// Subscribes to <see cref="NatsSubjects.PipelineStepCompleted"/> events and tracks
 /// end-to-end pipeline durations per <c>MediaId</c>. Used by <see cref="BatchImportService"/>
 /// to compute accurate average import times even when pipeline steps are asynchronous.
+/// A media item is considered complete when both ThumbnailGeneration and ObjectRecognition
+/// steps have been received (or only ThumbnailGeneration for non-image media).
 /// </summary>
 public sealed class PipelineCompletionTracker : IHostedService, IDisposable
 {
@@ -22,8 +24,15 @@ public sealed class PipelineCompletionTracker : IHostedService, IDisposable
     /// </summary>
     private readonly ConcurrentDictionary<Guid, long> _completedDurations = new();
 
+    /// <summary>Running sum of all completed pipeline durations for O(1) average.</summary>
+    private long _completedDurationSum;
+    private int _completedCount;
+
     /// <summary>MediaIds expected by the current batch. Events for unknown ids are ignored.</summary>
     private readonly ConcurrentDictionary<Guid, byte> _expectedIds = new();
+
+    /// <summary>Tracks which steps have completed per MediaId and their cumulative duration.</summary>
+    private readonly ConcurrentDictionary<Guid, StepProgress> _stepProgress = new();
 
     public PipelineCompletionTracker(INatsConnection nats, ILogger<PipelineCompletionTracker> logger)
     {
@@ -40,14 +49,14 @@ public sealed class PipelineCompletionTracker : IHostedService, IDisposable
 
     /// <summary>Returns the average pipeline duration across all tracked completions, or <c>null</c> if none.</summary>
     public TimeSpan? AveragePipelineDuration =>
-        _completedDurations.IsEmpty
-            ? null
-            : TimeSpan.FromMilliseconds(_completedDurations.Values.Average());
+        _completedCount > 0
+            ? TimeSpan.FromMilliseconds((double)Interlocked.Read(ref _completedDurationSum) / _completedCount)
+            : null;
 
     /// <summary>Number of media items that have completed the full pipeline.</summary>
-    public int CompletedCount => _completedDurations.Count;
+    public int CompletedCount => _completedCount;
 
-    /// <summary>Raised when a <see cref="PipelineSteps.PipelineComplete"/> event is received.</summary>
+    /// <summary>Raised when all expected pipeline steps for a media item have completed.</summary>
     public event Action<Guid, long>? OnPipelineCompleted;
 
     /// <summary>Clears all tracked completion data and expected ids. Call when starting a new batch.</summary>
@@ -55,6 +64,9 @@ public sealed class PipelineCompletionTracker : IHostedService, IDisposable
     {
         _completedDurations.Clear();
         _expectedIds.Clear();
+        _stepProgress.Clear();
+        _completedDurationSum = 0;
+        _completedCount = 0;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -96,14 +108,31 @@ public sealed class PipelineCompletionTracker : IHostedService, IDisposable
                 if (msg.Data is not { } evt)
                     continue;
 
-                if (evt.StepName == PipelineSteps.PipelineComplete
-                    && _expectedIds.ContainsKey(evt.MediaId))
+                if (!_expectedIds.ContainsKey(evt.MediaId))
+                    continue;
+
+                // Already completed — skip duplicate events
+                if (_completedDurations.ContainsKey(evt.MediaId))
+                    continue;
+
+                var progress = _stepProgress.GetOrAdd(evt.MediaId, _ => new StepProgress());
+                progress.Record(evt.StepName, evt.DurationMs);
+
+                _logger.LogInformation(
+                    "[PipelineTracker] Step empfangen: MediaId={MediaId}, Step={Step}, Duration={DurationMs}ms",
+                    evt.MediaId, evt.StepName, evt.DurationMs);
+
+                if (progress.IsComplete)
                 {
-                    _completedDurations[evt.MediaId] = evt.DurationMs;
+                    var totalMs = progress.TotalDurationMs;
+                    _completedDurations[evt.MediaId] = totalMs;
+                    Interlocked.Add(ref _completedDurationSum, totalMs);
+                    Interlocked.Increment(ref _completedCount);
+                    _stepProgress.TryRemove(evt.MediaId, out _);
                     _logger.LogInformation(
                         "[PipelineTracker] Pipeline abgeschlossen: MediaId={MediaId}, Gesamtdauer={DurationMs}ms",
-                        evt.MediaId, evt.DurationMs);
-                    OnPipelineCompleted?.Invoke(evt.MediaId, evt.DurationMs);
+                        evt.MediaId, totalMs);
+                    OnPipelineCompleted?.Invoke(evt.MediaId, totalMs);
                 }
             }
         }
@@ -116,5 +145,28 @@ public sealed class PipelineCompletionTracker : IHostedService, IDisposable
     public void Dispose()
     {
         _cts?.Dispose();
+    }
+
+    /// <summary>Tracks step completions for a single media item.</summary>
+    private sealed class StepProgress
+    {
+        private readonly HashSet<string> _completedSteps = [];
+        private long _totalDurationMs;
+
+        private static readonly HashSet<string> RequiredSteps =
+        [
+            PipelineSteps.ThumbnailGeneration,
+            PipelineSteps.ObjectRecognition
+        ];
+
+        public void Record(string stepName, long durationMs)
+        {
+            if (_completedSteps.Add(stepName))
+                Interlocked.Add(ref _totalDurationMs, durationMs);
+        }
+
+        public bool IsComplete => RequiredSteps.IsSubsetOf(_completedSteps);
+
+        public long TotalDurationMs => Interlocked.Read(ref _totalDurationMs);
     }
 }

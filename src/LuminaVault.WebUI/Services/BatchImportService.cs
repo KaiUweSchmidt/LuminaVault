@@ -29,8 +29,15 @@ public sealed class BatchImportService(
         ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".m4v", ".webm"
     ];
 
+    /// <summary>Number of concurrent HTTP uploads to the import service.</summary>
+    private const int UploadConcurrency = 4;
+
+    /// <summary>Minimum interval between UI progress notifications to avoid flooding Blazor.</summary>
+    private static readonly TimeSpan ProgressThrottle = TimeSpan.FromMilliseconds(500);
+
     private CancellationTokenSource? _cts;
     private Task? _importTask;
+    private DateTime _lastProgressNotification;
 
     // ── Public state ──────────────────────────────────────────────────────────
 
@@ -38,17 +45,21 @@ public sealed class BatchImportService(
     public string? DirectoryPath { get; private set; }
     public IReadOnlyList<string> FilesToImport { get; private set; } = [];
     public int TotalFiles => FilesToImport.Count;
-    public int ImportedCount { get; private set; }
-    public int ErrorCount { get; private set; }
+
+    private int _importedCountBacking;
+    private int _errorCountBacking;
+    private long _importMillisecondsSumBacking;
+    private int _importMillisecondsCountBacking;
+
+    public int ImportedCount => _importedCountBacking;
+    public int ErrorCount => _errorCountBacking;
     public string? CurrentFile { get; private set; }
     public string? OwnerCircuitId { get; private set; }
 
-    private readonly List<double> _importMilliseconds = [];
-
     /// <summary>Average HTTP upload duration (time until the server responds).</summary>
     public TimeSpan? AverageUploadTime =>
-        _importMilliseconds.Count > 0
-            ? TimeSpan.FromMilliseconds(_importMilliseconds.Average())
+        _importMillisecondsCountBacking > 0
+            ? TimeSpan.FromMilliseconds((double)_importMillisecondsSumBacking / _importMillisecondsCountBacking)
             : null;
 
     /// <summary>
@@ -96,10 +107,12 @@ public sealed class BatchImportService(
         NotifyProgress();
 
         FilesToImport = ScanDirectory(directoryPath);
-        ImportedCount = 0;
-        ErrorCount = 0;
-        _importMilliseconds.Clear();
+        _importedCountBacking = 0;
+        _errorCountBacking = 0;
+        _importMillisecondsSumBacking = 0;
+        _importMillisecondsCountBacking = 0;
         CurrentFile = null;
+        _lastProgressNotification = DateTime.MinValue;
 
         Status = BatchImportStatus.Running;
         NotifyProgress();
@@ -149,9 +162,10 @@ public sealed class BatchImportService(
         Status = BatchImportStatus.Idle;
         DirectoryPath = null;
         FilesToImport = [];
-        ImportedCount = 0;
-        ErrorCount = 0;
-        _importMilliseconds.Clear();
+        _importedCountBacking = 0;
+        _errorCountBacking = 0;
+        _importMillisecondsSumBacking = 0;
+        _importMillisecondsCountBacking = 0;
         pipelineTracker.Clear();
         CurrentFile = null;
         OwnerCircuitId = null;
@@ -163,6 +177,8 @@ public sealed class BatchImportService(
     private async Task RunLoopAsync(CancellationToken ct)
     {
         var startIndex = ImportedCount + ErrorCount;
+        var semaphore = new SemaphoreSlim(UploadConcurrency, UploadConcurrency);
+        var tasks = new List<Task>();
 
         for (int i = startIndex; i < FilesToImport.Count; i++)
         {
@@ -170,17 +186,43 @@ public sealed class BatchImportService(
                 break;
 
             var filePath = FilesToImport[i];
-            CurrentFile = Path.GetFileName(filePath);
-            NotifyProgress();
-
             var contentType = ResolveContentType(filePath);
             if (contentType is null)
             {
-                ErrorCount++;
-                NotifyProgress();
+                Interlocked.Increment(ref _errorCountBacking);
+                ThrottledNotifyProgress();
                 continue;
             }
 
+            await semaphore.WaitAsync(ct);
+            if (ct.IsCancellationRequested)
+                break;
+
+            tasks.Add(UploadOneAsync(filePath, contentType, semaphore, ct));
+
+            // Prune completed tasks periodically to avoid unbounded list growth
+            if (tasks.Count >= UploadConcurrency * 4)
+                tasks.RemoveAll(t => t.IsCompleted);
+        }
+
+        // Wait for all in-flight uploads to finish
+        try { await Task.WhenAll(tasks); }
+        catch (OperationCanceledException) { /* expected */ }
+
+        if (!ct.IsCancellationRequested && Status == BatchImportStatus.Running)
+        {
+            Status = BatchImportStatus.Completed;
+            CurrentFile = null;
+        }
+
+        // Always fire a final notification so the UI shows 100%
+        NotifyProgress();
+    }
+
+    private async Task UploadOneAsync(string filePath, string contentType, SemaphoreSlim semaphore, CancellationToken ct)
+    {
+        try
+        {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
@@ -191,39 +233,32 @@ public sealed class BatchImportService(
                 var fileName = Path.GetFileName(filePath);
                 var title = Path.GetFileNameWithoutExtension(filePath);
 
-                // Pre-generate the MediaId and register it with the tracker BEFORE the
-                // upload so that the NATS PipelineComplete event (published at the end of
-                // the import endpoint) is not missed due to a race condition.
                 var mediaId = Guid.NewGuid();
                 pipelineTracker.Track(mediaId);
 
-                var result = await mediaApi.UploadMediaAsync(stream, fileName, contentType, title, ct, mediaId);
+                await mediaApi.UploadMediaAsync(stream, fileName, contentType, title, ct, mediaId);
 
                 sw.Stop();
-                lock (_importMilliseconds)
-                    _importMilliseconds.Add(sw.Elapsed.TotalMilliseconds);
-                ImportedCount++;
+                Interlocked.Add(ref _importMillisecondsSumBacking, (long)sw.Elapsed.TotalMilliseconds);
+                Interlocked.Increment(ref _importMillisecondsCountBacking);
+                Interlocked.Increment(ref _importedCountBacking);
             }
             catch (OperationCanceledException)
             {
-                break;
+                // Let the main loop handle cancellation
             }
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "[BatchImport] Failed to import: {FilePath}", filePath);
-                ErrorCount++;
+                Interlocked.Increment(ref _errorCountBacking);
             }
 
-            NotifyProgress();
+            ThrottledNotifyProgress();
         }
-
-        if (!ct.IsCancellationRequested && Status == BatchImportStatus.Running)
+        finally
         {
-            Status = BatchImportStatus.Completed;
-            CurrentFile = null;
+            semaphore.Release();
         }
-
-        NotifyProgress();
     }
 
     private static List<string> ScanDirectory(string path)
@@ -234,8 +269,7 @@ public sealed class BatchImportService(
         return [.. Directory
             .EnumerateFiles(path, "*.*", SearchOption.AllDirectories)
             .Where(f => ValidExtensions.Contains(
-                Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
-            .OrderBy(f => f)];
+                Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))];
     }
 
     private static string? ResolveContentType(string filePath)
@@ -262,8 +296,15 @@ public sealed class BatchImportService(
 
     private void NotifyProgress()
     {
+        _lastProgressNotification = DateTime.UtcNow;
         try { OnProgressChanged?.Invoke(); }
         catch (Exception ex) { logger.LogDebug(ex, "[BatchImport] Progress notification handler threw an exception."); }
+    }
+
+    private void ThrottledNotifyProgress()
+    {
+        if (DateTime.UtcNow - _lastProgressNotification >= ProgressThrottle)
+            NotifyProgress();
     }
 
     public void Dispose()

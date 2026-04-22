@@ -1,4 +1,5 @@
 <Solution>
+  <Folder Name="/docs/" />
   <Folder Name="/src/">
     <Project Path="src/LuminaVault.ApiGateway/LuminaVault.ApiGateway.csproj" />
     <Project Path="src/LuminaVault.FaceRecognition/LuminaVault.FaceRecognition.csproj">
