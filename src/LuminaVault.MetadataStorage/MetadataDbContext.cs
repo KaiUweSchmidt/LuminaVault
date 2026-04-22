@@ -8,6 +8,7 @@ public class MetadataDbContext(DbContextOptions<MetadataDbContext> options) : Db
     public DbSet<Face> Faces => Set<Face>();
     public DbSet<Collection> Collections => Set<Collection>();
     public DbSet<CollectionMediaItem> CollectionMediaItems => Set<CollectionMediaItem>();
+    public DbSet<PipelineStepStatus> PipelineStatuses => Set<PipelineStepStatus>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,6 +44,14 @@ public class MetadataDbContext(DbContextOptions<MetadataDbContext> options) : Db
         {
             entity.HasKey(e => new { e.CollectionId, e.MediaId });
             entity.HasIndex(e => e.MediaId);
+        });
+
+        modelBuilder.Entity<PipelineStepStatus>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.MediaId);
+            entity.HasIndex(e => new { e.MediaId, e.StepName }).IsUnique();
+            entity.Property(e => e.StepName).IsRequired().HasMaxLength(128);
         });
     }
 }
