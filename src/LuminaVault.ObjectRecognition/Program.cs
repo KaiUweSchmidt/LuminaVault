@@ -1,5 +1,4 @@
 using LuminaVault.ObjectRecognition;
-using Microsoft.Extensions.Http.Resilience;
 using Minio;
 using Minio.DataModel.Args;
 
@@ -24,17 +23,6 @@ builder.Services.AddSingleton<YoloObjectDetector>(sp =>
     return new YoloObjectDetector(modelPath, logger);
 });
 
-builder.Services.AddHttpClient<FaceRecognitionClient>(client =>
-    client.BaseAddress = new Uri(builder.Configuration["Services:FaceRecognition"]
-        ?? "http://face-recognition:8080"))
-    .ConfigureAdditionalHttpMessageHandlers((_, _) => { })
-    .AddStandardResilienceHandler(options =>
-    {
-        options.AttemptTimeout.Timeout = TimeSpan.FromMinutes(5);
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(10);
-        options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(10);
-    });
-
 builder.Services.AddHttpClient<MetadataStorageClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:MetadataStorage"]
         ?? "http://metadata-storage:8080"));
@@ -51,7 +39,6 @@ app.MapPost("/recognize", async (
     RecognizeRequest request,
     IMinioClient minio,
     YoloObjectDetector yolo,
-    FaceRecognitionClient faceRecognition,
     MetadataStorageClient metadataStorage,
     ILogger<Program> logger) =>
 {
@@ -113,13 +100,7 @@ app.MapPost("/recognize", async (
         await metadataStorage.UpdateTagsAsync(request.MediaId, [.. detectedObjects]);
     }
 
-    logger.LogInformation("[PIPELINE:ObjRec] Schritt 3/3: Ergebnisse weiterleiten...");
-
-    if (personDetected)
-    {
-        logger.LogInformation("[PIPELINE:ObjRec] Person erkannt → FaceRecognition aufrufen für MediaId={MediaId}", request.MediaId);
-        await faceRecognition.RecognizeFacesAsync(request.MediaId, request.StorageBucket, request.StorageKey);
-    }
+    logger.LogInformation("[PIPELINE:ObjRec] Schritt 3/3: Ergebnisse zusammenfassen...");
 
     logger.LogInformation("[PIPELINE:ObjRec] ===== Objekterkennung abgeschlossen: MediaId={MediaId}, PersonDetected={PersonDetected}, Objekte=[{Objects}] =====",
         request.MediaId, personDetected, string.Join(", ", detectedObjects));

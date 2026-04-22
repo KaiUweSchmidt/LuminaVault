@@ -1,6 +1,7 @@
 @page "/system/warteschlange"
 @using LuminaVault.WebUI.Services
 @inject NatsQueueService QueueService
+@inject ServiceHealthChecker HealthChecker
 @rendermode InteractiveServer
 @implements IAsyncDisposable
 
@@ -70,6 +71,39 @@
     <p class="queue-last-updated">
         Zuletzt aktualisiert: @(_lastUpdated?.ToString("HH:mm:ss") + " UTC" ?? "–")
     </p>
+
+    <h2 class="health-section-title">🟢 Dienststatus</h2>
+    <p class="queue-subtitle">Health-Check aller Pipeline-Services.</p>
+
+    @if (_services.Count == 0)
+    {
+        <p class="queue-loading">Prüfe Services…</p>
+    }
+    else
+    {
+        <div class="queue-grid">
+            @foreach (var s in _services)
+            {
+                <div class="queue-card">
+                    <div class="queue-card-header">
+                        <span class="queue-consumer-name">@s.ServiceName</span>
+                        @if (s.IsHealthy)
+                        {
+                            <span class="queue-badge queue-badge-healthy">✅ Healthy</span>
+                        }
+                        else
+                        {
+                            <span class="queue-badge queue-badge-error">❌ Unhealthy</span>
+                        }
+                    </div>
+                    @if (!s.IsHealthy && s.Error is not null)
+                    {
+                        <p class="queue-error">@s.Error</p>
+                    }
+                </div>
+            }
+        </div>
+    }
 </div>
 
 <style>
@@ -189,10 +223,22 @@
         font-size: 0.78rem;
         color: var(--color-text-muted, #8b8fa3);
     }
+
+    .health-section-title {
+        margin-top: 2.5rem;
+        font-size: 1.3rem;
+        font-weight: 700;
+    }
+
+    .queue-badge-healthy {
+        background: rgba(38, 176, 80, 0.15);
+        color: #26b050;
+    }
 </style>
 
 @code {
     private List<ConsumerQueueInfo> _consumers = [];
+    private List<ServiceHealthInfo> _services = [];
     private bool _loading;
     private DateTime? _lastUpdated;
     private PeriodicTimer? _timer;
@@ -230,8 +276,12 @@
         _loading = true;
         try
         {
-            var stats = await QueueService.GetConsumerStatsAsync();
-            _consumers = stats.ToList();
+            var statsTask = QueueService.GetConsumerStatsAsync();
+            var healthTask = HealthChecker.CheckAllAsync();
+            await Task.WhenAll(statsTask, healthTask);
+
+            _consumers = statsTask.Result.ToList();
+            _services = healthTask.Result.ToList();
             _lastUpdated = DateTime.UtcNow;
         }
         finally

@@ -11,6 +11,8 @@ public static class PipelineSteps
     public const string MetadataStorage = "MetadataStorage";
     public const string ThumbnailGeneration = "ThumbnailGeneration";
     public const string ObjectRecognition = "ObjectRecognition";
+    public const string FaceRecognition = "FaceRecognition";
+    public const string Geocoding = "Geocoding";
 
     /// <summary>Sentinel step — published last to signal the entire pipeline is done.</summary>
     public const string PipelineComplete = "PipelineComplete";

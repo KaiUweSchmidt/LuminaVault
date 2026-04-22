@@ -34,6 +34,10 @@ builder.Services.AddHttpClient<MediaApiClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:ApiGateway"]
         ?? "http://api-gateway:8080"));
 
+builder.Services.AddHttpClient<ServiceHealthChecker>(client =>
+    client.BaseAddress = new Uri(builder.Configuration["Services:ApiGateway"]
+        ?? "http://api-gateway:8080"));
+
 var app = builder.Build();
 
 app.Logger.LogInformation("LuminaVault WebUI starting in {Environment} environment", app.Environment.EnvironmentName);

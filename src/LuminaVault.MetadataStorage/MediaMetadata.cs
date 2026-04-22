@@ -49,6 +49,12 @@ public record UpdateMediaMetadataRequest(
     string[]? Tags,
     int? PersonCount = null);
 
+public record UpdateGpsRequest(
+    double GpsLatitude,
+    double GpsLongitude,
+    string? GpsLocation,
+    DateTimeOffset? CapturedAt = null);
+
 public record CreateFaceRequest(
     Guid MediaId,
     string FaceDescription,

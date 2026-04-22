@@ -20,6 +20,8 @@ public sealed class NatsQueueService(INatsJSContext js)
         {
             NatsConsumers.ThumbnailGeneration,
             NatsConsumers.ObjectRecognition,
+            NatsConsumers.FaceRecognition,
+            NatsConsumers.Geocoding,
         };
 
         var results = new List<ConsumerQueueInfo>(consumerNames.Length);

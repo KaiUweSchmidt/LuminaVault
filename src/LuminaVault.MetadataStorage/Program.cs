@@ -82,6 +82,25 @@ app.MapPut("/media/{id:guid}", async (Guid id, UpdateMediaMetadataRequest reques
     return Results.Ok(metadata);
 });
 
+app.MapPut("/media/{id:guid}/gps", async (Guid id, UpdateGpsRequest request, MetadataDbContext db, ILogger<Program> logger) =>
+{
+    logger.LogInformation("[PIPELINE:MetaStore] PUT /media/{MediaId}/gps - GPS-Update angefordert", id);
+    var metadata = await db.MediaMetadata.FindAsync(id);
+    if (metadata is null)
+        return Results.NotFound();
+
+    metadata.GpsLatitude = request.GpsLatitude;
+    metadata.GpsLongitude = request.GpsLongitude;
+    metadata.GpsLocation = request.GpsLocation;
+    if (request.CapturedAt.HasValue)
+        metadata.CreatedAt = request.CapturedAt.Value;
+    metadata.UpdatedAt = DateTimeOffset.UtcNow;
+
+    await db.SaveChangesAsync();
+    logger.LogInformation("[PIPELINE:MetaStore] PUT /media/{MediaId}/gps - GPS gespeichert: '{Location}'", id, metadata.GpsLocation);
+    return Results.Ok(metadata);
+});
+
 app.MapDelete("/media/{id:guid}", async (Guid id, MetadataDbContext db) =>
 {
     var metadata = await db.MediaMetadata.FindAsync(id);
