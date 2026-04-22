@@ -10,4 +10,11 @@ public static class NatsSubjects
 
     /// <summary>Published by any pipeline step after it finishes processing a media item.</summary>
     public const string PipelineStepCompleted = "media.pipeline.step.completed";
+
+    /// <summary>
+    /// NATS request/reply subject for reverse geocoding.
+    /// The requester sends a <see cref="ReverseGeocodingRequest"/> and expects a
+    /// <see cref="ReverseGeocodingReply"/> in return.
+    /// </summary>
+    public const string ReverseGeocodingRequest = "geocoding.reverse";
 }

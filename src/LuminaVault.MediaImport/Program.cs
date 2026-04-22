@@ -35,11 +35,7 @@ builder.Services.AddHttpClient<MetadataStorageClient>(client =>
     client.BaseAddress = new Uri(builder.Configuration["Services:MetadataStorage"]
         ?? "http://metadata-storage:8080"));
 
-builder.Services.AddHttpClient<IGeocodingService, NominatimGeocodingService>(client =>
-{
-    // Nominatim requires a meaningful User-Agent header per their usage policy
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("LuminaVault/1.0 (https://github.com/KaiUweSchmidt/LuminaVault)");
-});
+builder.Services.AddSingleton<IGeocodingService, NatsGeocodingService>();
 
 var app = builder.Build();
 
