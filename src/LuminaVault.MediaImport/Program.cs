@@ -73,24 +73,52 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     logger.LogInformation("[PIPELINE] Schritt 1/3: Datei empfangen - {FileName} ({ContentType}, {Size} bytes)",
         file.FileName, file.ContentType, file.Length);
 
+    // HEIC/HEIF → JPEG Konvertierung
+    var actualFileName = file.FileName;
+    var actualContentType = file.ContentType;
+    Stream uploadStream;
+    long uploadSize;
+
+    if (HeicToJpegConverter.IsHeic(file.ContentType, file.FileName))
+    {
+        logger.LogInformation("[PIPELINE] HEIC erkannt – konvertiere zu JPEG: {FileName}", file.FileName);
+        var jpegStream = new MemoryStream();
+        await using (var heicStream = file.OpenReadStream())
+        {
+            await HeicToJpegConverter.ConvertToJpegAsync(heicStream, jpegStream);
+        }
+        uploadStream = jpegStream;
+        uploadSize = jpegStream.Length;
+        actualFileName = HeicToJpegConverter.ReplaceExtensionWithJpg(file.FileName);
+        actualContentType = "image/jpeg";
+        logger.LogInformation("[PIPELINE] HEIC→JPEG Konvertierung abgeschlossen: {NewFileName} ({NewSize} bytes)",
+            actualFileName, uploadSize);
+    }
+    else
+    {
+        uploadStream = file.OpenReadStream();
+        uploadSize = file.Length;
+    }
+
+    await using (uploadStream)
+    {
     const string bucket = "media";
     await EnsureBucketExistsAsync(minio, bucket);
 
     var mediaId = Guid.TryParse(form["mediaId"].ToString(), out var parsedId) ? parsedId : Guid.NewGuid();
-    var storageKey = $"{mediaId}/{file.FileName}";
+    var storageKey = $"{mediaId}/{actualFileName}";
 
     logger.LogInformation("[PIPELINE] Schritt 2/3: MinIO-Upload starten - MediaId={MediaId}, Bucket={Bucket}, Key={Key}",
         mediaId, bucket, storageKey);
 
     var sw = System.Diagnostics.Stopwatch.StartNew();
     var pipelineSw = System.Diagnostics.Stopwatch.StartNew();
-    await using var stream = file.OpenReadStream();
     await minio.PutObjectAsync(new PutObjectArgs()
         .WithBucket(bucket)
         .WithObject(storageKey)
-        .WithStreamData(stream)
-        .WithObjectSize(file.Length)
-        .WithContentType(file.ContentType));
+        .WithStreamData(uploadStream)
+        .WithObjectSize(uploadSize)
+        .WithContentType(actualContentType));
     sw.Stop();
 
     logger.LogInformation("[PIPELINE] Schritt 2/3: MinIO-Upload abgeschlossen in {ElapsedMs}ms", sw.ElapsedMilliseconds);
@@ -110,9 +138,9 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
         mediaItem = new MediaItem
         {
             Id = mediaId,
-            FileName = file.FileName,
-            ContentType = file.ContentType,
-            FileSizeBytes = file.Length,
+            FileName = actualFileName,
+            ContentType = actualContentType,
+            FileSizeBytes = uploadSize,
             ImportedAt = DateTimeOffset.UtcNow,
             StorageBucket = bucket,
             StorageKey = storageKey
@@ -128,8 +156,8 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     // Create metadata entry in MetadataStorage service
     try
     {
-        await metadataStorage.CreateMetadataAsync(mediaId, title, file.FileName, file.ContentType,
-            file.Length, gpsLatitude: null, gpsLongitude: null, gpsLocation: null, capturedAt: null);
+        await metadataStorage.CreateMetadataAsync(mediaId, title, actualFileName, actualContentType,
+            uploadSize, gpsLatitude: null, gpsLongitude: null, gpsLocation: null, capturedAt: null);
         logger.LogInformation("[PIPELINE] MetadataStorage-Eintrag erstellt für MediaId={MediaId}", mediaId);
     }
     catch (Exception ex)
@@ -143,9 +171,9 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
     {
         var importedEvent = new MediaImportedEvent(
             mediaId,
-            file.FileName,
-            file.ContentType,
-            file.Length,
+            actualFileName,
+            actualContentType,
+            uploadSize,
             bucket,
             storageKey);
         var ack = await js.PublishAsync(NatsSubjects.MediaImported, importedEvent);
@@ -160,8 +188,9 @@ app.MapPost("/import", async (HttpRequest httpRequest, IMinioClient minio,
 
     pipelineSw.Stop();
     logger.LogInformation("[PIPELINE] ===== Import abgeschlossen: MediaId={MediaId}, Datei={FileName}, Gesamtdauer={TotalMs}ms =====",
-        mediaId, file.FileName, pipelineSw.ElapsedMilliseconds);
+        mediaId, actualFileName, pipelineSw.ElapsedMilliseconds);
     return Results.Created($"/media/{mediaId}", mediaItem);
+    } // await using (uploadStream)
 }).DisableAntiforgery();
 
 app.MapGet("/media/{id:guid}", async (Guid id, MediaImportDbContext db) =>

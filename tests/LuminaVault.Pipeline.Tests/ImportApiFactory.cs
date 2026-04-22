@@ -57,17 +57,6 @@ internal sealed class ImportApiFactory : WebApplicationFactory<Program>
             services.AddSingleton(MinioClient);
             services.AddKeyedSingleton<IMinioClient>("public", (_, _) => MinioClient);
 
-            // Replace geocoding service with a no-op stub so tests don't make real HTTP calls
-            var geocodingDescriptors = services.Where(
-                d => d.ServiceType == typeof(IGeocodingService)).ToList();
-            foreach (var d in geocodingDescriptors)
-                services.Remove(d);
-
-            var geocodingStub = Substitute.For<IGeocodingService>();
-            geocodingStub.GetLocationNameAsync(Arg.Any<double>(), Arg.Any<double>(), Arg.Any<CancellationToken>())
-                .Returns((string?)null);
-            services.AddSingleton(geocodingStub);
-
             // Replace NATS connection with a no-op stub so tests don't need a running NATS server
             var natsDescriptors = services.Where(
                 d => d.ServiceType == typeof(INatsConnection)).ToList();
