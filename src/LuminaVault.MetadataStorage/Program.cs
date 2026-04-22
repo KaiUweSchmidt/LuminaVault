@@ -1,11 +1,15 @@
 using LuminaVault.MetadataStorage;
+using LuminaVault.ServiceDefaults;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddNatsClient();
 builder.Services.AddDbContext<MetadataDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("luminavault-metadata")));
+
+builder.Services.AddHostedService<NatsPipelineStatusSubscriber>();
 
 var app = builder.Build();
 
@@ -185,13 +189,14 @@ app.MapGet("/faces/names", async (MetadataDbContext db) =>
 
 app.MapDelete("/admin/purge-all", async (MetadataDbContext db, ILogger<Program> logger) =>
 {
+    var pipelineStatusCount = await db.PipelineStatuses.ExecuteDeleteAsync();
     var collectionMediaCount = await db.CollectionMediaItems.ExecuteDeleteAsync();
     var collectionCount = await db.Collections.ExecuteDeleteAsync();
     var faceCount = await db.Faces.ExecuteDeleteAsync();
     var metaCount = await db.MediaMetadata.ExecuteDeleteAsync();
-    logger.LogWarning("[ADMIN] Purge-All: {FaceCount} Faces, {MetaCount} Metadata, {CollectionCount} Collections, {CollectionMediaCount} CollectionMediaItems gelöscht",
-        faceCount, metaCount, collectionCount, collectionMediaCount);
-    return Results.Ok(new { DeletedFaces = faceCount, DeletedMetadata = metaCount, DeletedCollections = collectionCount, DeletedCollectionMediaItems = collectionMediaCount });
+    logger.LogWarning("[ADMIN] Purge-All: {FaceCount} Faces, {MetaCount} Metadata, {CollectionCount} Collections, {CollectionMediaCount} CollectionMediaItems, {PipelineStatusCount} PipelineStatuses gelöscht",
+        faceCount, metaCount, collectionCount, collectionMediaCount, pipelineStatusCount);
+    return Results.Ok(new { DeletedFaces = faceCount, DeletedMetadata = metaCount, DeletedCollections = collectionCount, DeletedCollectionMediaItems = collectionMediaCount, DeletedPipelineStatuses = pipelineStatusCount });
 });
 
 // Collections endpoints
@@ -269,6 +274,25 @@ app.MapGet("/collections/{id:guid}/media", async (Guid id, MetadataDbContext db)
         .Select(i => i.MediaId)
         .ToListAsync();
     return Results.Ok(mediaIds);
+});
+
+// Pipeline status endpoints
+app.MapGet("/pipeline-status", async (MetadataDbContext db) =>
+{
+    var statuses = await db.PipelineStatuses
+        .OrderBy(s => s.MediaId)
+        .ThenBy(s => s.StepName)
+        .ToListAsync();
+    return Results.Ok(statuses);
+});
+
+app.MapGet("/pipeline-status/{mediaId:guid}", async (Guid mediaId, MetadataDbContext db) =>
+{
+    var statuses = await db.PipelineStatuses
+        .Where(s => s.MediaId == mediaId)
+        .OrderBy(s => s.StepName)
+        .ToListAsync();
+    return Results.Ok(statuses);
 });
 
 app.Run();

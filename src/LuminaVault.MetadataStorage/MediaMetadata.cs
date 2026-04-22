@@ -84,3 +84,25 @@ public class CollectionMediaItem
 
 public record CreateCollectionRequest(string Name, string Description);
 public record UpdateCollectionRequest(string? Name, string? Description);
+
+/// <summary>Possible states of a single pipeline step for a media item.</summary>
+public enum PipelineStepStatusValue
+{
+    Pending = 0,
+    Success = 1,
+    Error = 2
+}
+
+/// <summary>
+/// Records the processing outcome of one pipeline step (e.g. ThumbnailGeneration) for a media item.
+/// </summary>
+public class PipelineStepStatus
+{
+    public Guid Id { get; set; }
+    public Guid MediaId { get; set; }
+    public string StepName { get; set; } = string.Empty;
+    public PipelineStepStatusValue Status { get; set; } = PipelineStepStatusValue.Pending;
+    public DateTimeOffset? CompletedAt { get; set; }
+}
+
+public record PipelineStepStatusRequest(Guid MediaId, string StepName, bool Success, DateTimeOffset CompletedAt);

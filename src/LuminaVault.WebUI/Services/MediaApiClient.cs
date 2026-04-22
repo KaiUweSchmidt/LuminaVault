@@ -151,6 +151,12 @@ public class MediaApiClient(HttpClient httpClient)
 
     public async Task<List<Guid>> GetCollectionMediaIdsAsync(Guid collectionId) =>
         await httpClient.GetFromJsonAsync<List<Guid>>($"/api/metadata/collections/{collectionId}/media") ?? [];
+
+    public async Task<List<PipelineStepStatusDto>> GetAllPipelineStatusesAsync() =>
+        await httpClient.GetFromJsonAsync<List<PipelineStepStatusDto>>("/api/metadata/pipeline-status") ?? [];
+
+    public async Task<List<PipelineStepStatusDto>> GetPipelineStatusAsync(Guid mediaId) =>
+        await httpClient.GetFromJsonAsync<List<PipelineStepStatusDto>>($"/api/metadata/pipeline-status/{mediaId}") ?? [];
 }
 
 public record MediaItem(
@@ -185,3 +191,17 @@ public record ImportResult(Guid Id, string FileName, string ContentType, long Fi
 
 public record CollectionDto(Guid Id, string Name, string Description, DateTimeOffset CreatedAt, int ImageCount);
 public record CreateCollectionRequest(string Name, string Description);
+
+public enum ServiceStatus
+{
+    Pending = 0,
+    Success = 1,
+    Error = 2
+}
+
+public record PipelineStepStatusDto(
+    Guid Id,
+    Guid MediaId,
+    string StepName,
+    ServiceStatus Status,
+    DateTimeOffset? CompletedAt);

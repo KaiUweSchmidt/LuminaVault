@@ -1,5 +1,6 @@
 @page "/gallery"
 @using LuminaVault.WebUI.Services
+@using LuminaVault.ServiceDefaults
 @inject MediaApiClient MediaApi
 @inject GalleryUserSettingsService GallerySettings
 @rendermode InteractiveServer
@@ -47,6 +48,9 @@
                             <th class="col-tags sortable" @onclick='() => ToggleSort("tags")'>
                                 Tags @SortIndicator("tags")
                             </th>
+                            <th class="col-status">
+                                Pipeline-Status
+                            </th>
                         </tr>
                         <tr class="filter-row">
                             <th></th>
@@ -87,6 +91,14 @@
                                     }
                                 </select>
                             </th>
+                            <th>
+                                <select class="filter-select" @bind="_filterStatus">
+                                    <option value="">Alle</option>
+                                    <option value="complete">Vollständig</option>
+                                    <option value="pending">Ausstehend</option>
+                                    <option value="error">Fehler</option>
+                                </select>
+                            </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -113,6 +125,9 @@
                                 <td class="col-gps">@FormatGpsLocation(item)</td>
                                 <td class="col-tags">
                                     <span class="tag-cell" title="@string.Join(", ", item.Tags)">@(item.Tags.Length > 0 ? item.Tags[0] : "–")</span>
+                                </td>
+                                <td class="col-status">
+                                    @RenderPipelineStatus(item.Id)
                                 </td>
                             </tr>
                         }
@@ -376,6 +391,13 @@
         font-size: 0.85em;
         box-shadow: 2px 4px 12px rgba(0,0,0,0.4);
     }
+    .col-status { min-width: 110px; white-space: nowrap; }
+    .pipeline-status-cell { display: flex; gap: 2px; flex-wrap: nowrap; }
+    .pipeline-step {
+        font-size: 1em;
+        cursor: default;
+        user-select: none;
+    }
 </style>
 
 @code {
@@ -398,6 +420,10 @@
     private string _filterType = string.Empty;
     private string _filterGps = string.Empty;
     private string _filterTag = string.Empty;
+    private string _filterStatus = string.Empty;
+
+    // Pipeline status: keyed by MediaId, value is dict of step name -> status
+    private Dictionary<Guid, Dictionary<string, ServiceStatus>> _pipelineStatuses = [];
 
     private IEnumerable<MediaItem> FilteredAndSortedItems
     {
@@ -416,6 +442,17 @@
 
             if (!string.IsNullOrWhiteSpace(_filterTag))
                 items = items.Where(i => i.Tags.Contains(_filterTag, StringComparer.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(_filterStatus))
+            {
+                items = _filterStatus switch
+                {
+                    "complete" => items.Where(i => IsStatusComplete(i.Id)),
+                    "pending"  => items.Where(i => HasStatusPending(i.Id)),
+                    "error"    => items.Where(i => HasStatusError(i.Id)),
+                    _ => items
+                };
+            }
 
             if (_sortColumn is not null)
             {
@@ -499,6 +536,13 @@
             }
 
             _collections = await MediaApi.GetCollectionsAsync();
+
+            var allStatuses = await MediaApi.GetAllPipelineStatusesAsync();
+            _pipelineStatuses = allStatuses
+                .GroupBy(s => s.MediaId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.ToDictionary(s => s.StepName, s => s.Status));
         }
         catch (Exception ex)
         {
@@ -702,6 +746,65 @@
         _faceNameInputs = [];
         _annotatedPreviewUrl = null;
         _cachedImageBytes = null;
+    }
+
+    private static readonly string[] PipelineStepNames =
+    [
+        PipelineSteps.ThumbnailGeneration,
+        PipelineSteps.ObjectRecognition,
+        PipelineSteps.FaceRecognition,
+        PipelineSteps.Geocoding
+    ];
+
+    private static readonly Dictionary<string, string> StepLabels = new()
+    {
+        [PipelineSteps.ThumbnailGeneration] = "Thumbnail",
+        [PipelineSteps.ObjectRecognition]   = "Objekte",
+        [PipelineSteps.FaceRecognition]     = "Gesichter",
+        [PipelineSteps.Geocoding]           = "Geocoding"
+    };
+
+    private bool IsStatusComplete(Guid mediaId) =>
+        _pipelineStatuses.TryGetValue(mediaId, out var steps) &&
+        PipelineStepNames.All(s => steps.TryGetValue(s, out var v) && v == ServiceStatus.Success);
+
+    // Returns true when at least one pipeline step has not yet completed successfully.
+    // Items with no recorded statuses are also treated as fully pending (freshly imported).
+    private bool HasStatusPending(Guid mediaId) =>
+        !_pipelineStatuses.TryGetValue(mediaId, out var steps) ||
+        PipelineStepNames.Any(s => !steps.TryGetValue(s, out var v) || v == ServiceStatus.Pending);
+
+    private bool HasStatusError(Guid mediaId) =>
+        _pipelineStatuses.TryGetValue(mediaId, out var steps) &&
+        PipelineStepNames.Any(s => steps.TryGetValue(s, out var v) && v == ServiceStatus.Error);
+
+    private MarkupString RenderPipelineStatus(Guid mediaId)
+    {
+        _pipelineStatuses.TryGetValue(mediaId, out var steps);
+        steps ??= [];
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<span class=\"pipeline-status-cell\">");
+        foreach (var step in PipelineStepNames)
+        {
+            var label = StepLabels.TryGetValue(step, out var l) ? l : step;
+            if (steps.TryGetValue(step, out var status))
+            {
+                var (icon, cssClass) = status switch
+                {
+                    ServiceStatus.Success => ("✅", "status-ok"),
+                    ServiceStatus.Error   => ("❌", "status-err"),
+                    _                     => ("⏳", "status-pending")
+                };
+                sb.Append($"<span class=\"pipeline-step {cssClass}\" title=\"{label}\">{icon}</span>");
+            }
+            else
+            {
+                sb.Append($"<span class=\"pipeline-step status-pending\" title=\"{label}\">⏳</span>");
+            }
+        }
+        sb.Append("</span>");
+        return new MarkupString(sb.ToString());
     }
 
     private static string FormatFileSize(long bytes) => bytes switch
