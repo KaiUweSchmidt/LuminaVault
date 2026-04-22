@@ -97,25 +97,9 @@
                 </table>
             </div>
 
-            <div class="gallery-preview">
-                @if (_previewMediaId is null)
-                {
-                    <div class="preview-empty">
-                        <span class="preview-empty-icon">👈</span>
-                        <p>Bild aus einer Sammlung auswählen</p>
-                    </div>
-                }
-                else
-                {
-                    <div class="preview-container">
-                        <div class="preview-image-centering">
-                            <div class="preview-image-wrapper">
-                                <img src="/proxy/media/@_previewMediaId" alt="Vorschau" class="preview-media" />
-                            </div>
-                        </div>
-                    </div>
-                }
-            </div>
+            <MediaPreviewPanel
+                MediaId="@_previewMediaId"
+                EmptyMessage="Bild aus einer Sammlung auswählen" />
         </div>
     }
 </div>

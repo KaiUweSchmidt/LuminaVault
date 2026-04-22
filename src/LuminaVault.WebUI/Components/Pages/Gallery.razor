@@ -120,45 +120,14 @@
                 </table>
             </div>
 
-            <div class="gallery-preview">
-                @if (_selectedItem is null)
-                {
-                    <div class="preview-empty">
-                        <span class="preview-empty-icon">👈</span>
-                        <p>Datei aus der Liste auswählen</p>
-                    </div>
-                }
-                else if (_isLoadingPreview)
-                {
-                    <div class="loading-message">Lade Vorschau…</div>
-                }
-                else if (_selectedItem.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
-                {
-                    <div class="preview-container">
-                        <video src="@_previewUrl" controls class="preview-media">
-                            Ihr Browser unterstützt dieses Videoformat nicht.
-                        </video>
-                        <div class="preview-info">
-                            <strong>@_selectedItem.FileName</strong>
-                            <small>@_selectedItem.ContentType · @FormatFileSize(_selectedItem.FileSizeBytes)</small>
-                        </div>
-                    </div>
-                }
-                else
-                {
-                    <div class="preview-container">
-                        <div class="preview-image-centering">
-                            <div class="preview-image-wrapper">
-                            <img src="@(_annotatedPreviewUrl ?? _previewUrl)" alt="@_selectedItem.FileName" class="preview-media" />
-                            </div>
-                        </div>
-                        <div class="preview-info">
-                            <strong>@_selectedItem.FileName</strong>
-                            <small>@_selectedItem.ContentType · @FormatFileSize(_selectedItem.FileSizeBytes)</small>
-                        </div>
-                    </div>
-                }
-            </div>
+            <MediaPreviewPanel
+                MediaId="@_selectedId"
+                MediaUrl="@_previewUrl"
+                AnnotatedUrl="@_annotatedPreviewUrl"
+                ContentType="@_selectedItem?.ContentType"
+                FileName="@_selectedItem?.FileName"
+                FileSizeBytes="@(_selectedItem?.FileSizeBytes ?? 0)"
+                IsLoading="@_isLoadingPreview" />
         </div>
     }
 

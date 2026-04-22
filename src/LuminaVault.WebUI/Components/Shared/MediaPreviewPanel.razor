@@ -1,0 +1,94 @@
+@using LuminaVault.WebUI.Services
+
+<div class="gallery-preview">
+    @if (MediaId is null)
+    {
+        <div class="preview-empty">
+            <span class="preview-empty-icon">&#x1F448;</span>
+            <p>@EmptyMessage</p>
+        </div>
+    }
+    else if (IsLoading)
+    {
+        <div class="loading-message">Lade Vorschau...</div>
+    }
+    else if (ContentType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true)
+    {
+        <div class="preview-container">
+            <video src="@EffectiveMediaUrl" controls class="preview-media">
+                Ihr Browser unterstuetzt dieses Videoformat nicht.
+            </video>
+            @if (FileName is not null)
+            {
+                <div class="preview-info">
+                    <strong>@FileName</strong>
+                    <small>@ContentType - @FormatFileSize(FileSizeBytes)</small>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="preview-container">
+            <div class="preview-image-centering">
+                <div class="preview-image-wrapper">
+                    @if (ContentType is null)
+                    {
+                        <img src="@(AnnotatedUrl ?? EffectiveMediaUrl)" alt="@(FileName ?? "Vorschau")" class="preview-media"
+                             onerror="@($"this.style.display='none'; this.parentElement.querySelector('video').style.display='block';")" />
+                        <video src="@EffectiveMediaUrl" controls class="preview-media" style="display:none;"
+                               onloadeddata="this.style.display='block';">
+                        </video>
+                    }
+                    else
+                    {
+                        <img src="@(AnnotatedUrl ?? EffectiveMediaUrl)" alt="@(FileName ?? "Vorschau")" class="preview-media" />
+                    }
+                </div>
+            </div>
+            @if (FileName is not null)
+            {
+                <div class="preview-info">
+                    <strong>@FileName</strong>
+                    <small>@ContentType - @FormatFileSize(FileSizeBytes)</small>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>The media ID to preview. Null shows the empty placeholder.</summary>
+    [Parameter] public Guid? MediaId { get; set; }
+
+    /// <summary>Direct URL to the media file. Computed from MediaId if not set.</summary>
+    [Parameter] public string? MediaUrl { get; set; }
+
+    /// <summary>Optional annotated image URL that overrides MediaUrl.</summary>
+    [Parameter] public string? AnnotatedUrl { get; set; }
+
+    /// <summary>Content type of the media.</summary>
+    [Parameter] public string? ContentType { get; set; }
+
+    /// <summary>Original file name shown in the info bar.</summary>
+    [Parameter] public string? FileName { get; set; }
+
+    /// <summary>File size in bytes shown in the info bar.</summary>
+    [Parameter] public long FileSizeBytes { get; set; }
+
+    /// <summary>Whether the preview is currently loading.</summary>
+    [Parameter] public bool IsLoading { get; set; }
+
+    /// <summary>Text shown when no media is selected.</summary>
+    [Parameter] public string EmptyMessage { get; set; } = "Datei aus der Liste auswaehlen";
+
+    private string? EffectiveMediaUrl => MediaUrl ?? (MediaId.HasValue ? $"/proxy/media/{MediaId}" : null);
+
+    private static string FormatFileSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        < 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):F1} GB"
+    };
+}
