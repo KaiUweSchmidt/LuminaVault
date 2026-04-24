@@ -49,74 +49,24 @@ services:
       timeout: 5s
       retries: 10
 
-  gisgraphy-db:
-    image: postgis/postgis:17-3.4-alpine
+  nominatim:
+    image: mediagis/nominatim:4.5
     environment:
-      POSTGRES_USER: gisgraphy
-      POSTGRES_PASSWORD: gisgraphy
-      POSTGRES_DB: gisgraphy
+      PBF_PATH: /osm-data/europe-latest.osm.pbf
+      REPLICATION_URL: https://download.geofabrik.de/europe-updates/
+      NOMINATIM_PASSWORD: nominatim
+      IMPORT_STYLE: full
     volumes:
-      - gisgraphy-data:/var/lib/postgresql/data
+      - nominatim-data:/var/lib/postgresql/14/main
+      - nominatim-flatnode:/nominatim/flatnode
+      - C:\Dev\OpenStreetMapData:/osm-data:ro
+    shm_size: 1g
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gisgraphy -d gisgraphy"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  gisgraphy:
-    image: gisgraphy/gisgraphyofficial:latest
-    environment:
-      SPRING_DATASOURCE_URL: "jdbc:postgresql://gisgraphy-db:5432/gisgraphy"
-      SPRING_DATASOURCE_USERNAME: gisgraphy
-      SPRING_DATASOURCE_PASSWORD: gisgraphy
-    volumes:
-      - gisgraphy-osm-data:/osm-data
-    depends_on:
-      gisgraphy-db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/reversegeocoding/reversegeocode?lat=48&lng=11&format=json || exit 1"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/status"]
       interval: 30s
       timeout: 10s
       retries: 10
-      start_period: 120s
-
-  # ──────────────────────────────────────────────────────────────────────────────
-  # One-shot Europe OSM importer – only runs when the 'import' profile is active.
-  #
-  # Usage (run once after the stack is up):
-  #   docker compose --profile import up --no-deps gisgraphy-importer
-  #
-  # What it does:
-  #   1. Downloads the Europe OSM PBF extract from Geofabrik (~30 GB, may take
-  #      a long time depending on your connection).
-  #   2. Calls the Gisgraphy import API to kick off the data import into
-  #      gisgraphy-db.  The import itself can take several hours.
-  #
-  # Note: Sufficient disk space (≥100 GB) and RAM (≥8 GB) are recommended for
-  # a full Europe import.  For testing, replace the Geofabrik URL with a smaller
-  # regional extract, e.g.:
-  #   https://download.geofabrik.de/europe/germany-latest.osm.pbf
-  # ──────────────────────────────────────────────────────────────────────────────
-  gisgraphy-importer:
-    image: alpine:latest
-    profiles:
-      - import
-    command: >
-      sh -c "
-        apk add --no-cache curl wget &&
-        echo '=== Downloading Germany OSM PBF from Geofabrik ===' &&
-        wget -q --show-progress -O /osm-data/germany-latest.osm.pbf https://download.geofabrik.de/europe/germany-latest.osm.pbf &&
-        echo '=== Download complete – triggering Gisgraphy import ===' &&
-        curl -sf 'http://gisgraphy:8080/api/import?type=osm' &&
-        echo '=== Import started. Monitor progress at http://localhost:8080/public/admin.html ==='
-      "
-    volumes:
-      - gisgraphy-osm-data:/osm-data
-    depends_on:
-      gisgraphy:
-        condition: service_healthy
-    restart: "no"
+      start_period: 600s
 
   geocoding-service:
     build:
@@ -124,7 +74,7 @@ services:
       dockerfile: src/LuminaVault.GeocodingService/Dockerfile
     environment:
       ASPNETCORE_ENVIRONMENT: Development
-      Services__Gisgraphy: http://gisgraphy:8080
+      Services__Nominatim: http://nominatim:8080
       Services__MetadataStorage: http://metadata-storage:8080
       Minio__Endpoint: minio:9000
       Minio__AccessKey: minioadmin
@@ -135,7 +85,7 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      gisgraphy:
+      nominatim:
         condition: service_started
       metadata-storage:
         condition: service_started
@@ -291,6 +241,6 @@ volumes:
   postgres-data:
   minio-data:
   ollama-data:
-  gisgraphy-data:
-  gisgraphy-osm-data:
+  nominatim-data:
+  nominatim-flatnode:
   webui-keys:

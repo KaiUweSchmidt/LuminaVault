@@ -6,13 +6,13 @@ namespace LuminaVault.GeocodingService;
 
 /// <summary>
 /// Background service that subscribes to <c>geocoding.reverse</c> NATS requests,
-/// resolves coordinates via the local Gisgraphy instance, and replies with a
+/// resolves coordinates via the local Nominatim instance, and replies with a
 /// <see cref="ReverseGeocodingReply"/>.  Results are cached in-memory so that
-/// repeated lookups for the same location never hit Gisgraphy twice within a session.
+/// repeated lookups for the same location never hit Nominatim twice within a session.
 /// </summary>
 public sealed class GeocodingWorker(
     INatsConnection nats,
-    GisgraphyClient gisgraphy,
+    NominatimClient nominatim,
     IMemoryCache cache,
     ILogger<GeocodingWorker> logger) : BackgroundService
 {
@@ -71,7 +71,7 @@ public sealed class GeocodingWorker(
             return cached;
         }
 
-        var locationName = await gisgraphy.ReverseGeocodeAsync(latitude, longitude, ct);
+        var locationName = await nominatim.ReverseGeocodeAsync(latitude, longitude, ct);
 
         cache.Set(cacheKey, locationName, CacheDuration);
 

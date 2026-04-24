@@ -11,14 +11,14 @@ namespace LuminaVault.GeocodingService;
 
 /// <summary>
 /// Background service that consumes <c>media.imported</c> events from JetStream,
-/// extracts GPS coordinates from image EXIF data, reverse-geocodes via Gisgraphy,
+/// extracts GPS coordinates from image EXIF data, reverse-geocodes via Nominatim,
 /// and updates MetadataStorage with the resolved location.
 /// </summary>
 public sealed class NatsGeocodingSubscriber(
     INatsConnection nats,
     INatsJSContext js,
     IMinioClient minio,
-    GisgraphyClient gisgraphy,
+    NominatimClient nominatim,
     GeocodingMetadataClient metadataStorage,
     ILogger<NatsGeocodingSubscriber> logger) : BackgroundService
 {
@@ -105,7 +105,7 @@ public sealed class NatsGeocodingSubscriber(
         imageStream.Position = 0;
         var capturedAt = ExtractDateTaken(imageStream);
 
-        var locationName = await gisgraphy.ReverseGeocodeAsync(latitude, longitude, ct);
+        var locationName = await nominatim.ReverseGeocodeAsync(latitude, longitude, ct);
         if (string.IsNullOrWhiteSpace(locationName))
         {
             logger.LogWarning("[NATS:Geocoding] Reverse-Geocoding lieferte kein Ergebnis für MediaId={MediaId} – Koordinaten werden ohne Ortsnamen gespeichert", evt.MediaId);

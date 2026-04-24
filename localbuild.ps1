@@ -1,8 +1,8 @@
 Write-Host "=== LuminaVault Local Build ===" -ForegroundColor Cyan
 
-# Gisgraphy und dessen DB werden nicht neu gestartet, damit der OSM-Import erhalten bleibt.
-# Zum erstmaligen Starten: docker compose up -d gisgraphy-db gisgraphy
-# Zum Import:              docker compose --profile import up --no-deps gisgraphy-importer
+# Nominatim wird nicht neu gestartet, damit der OSM-Import erhalten bleibt.
+# Zum erstmaligen Starten: .\nominatim.ps1 start
+# Nominatim importiert die europe-latest.osm.pbf automatisch beim ersten Start.
 $appServices = @(
     "nats", "postgres", "minio", "ollama",
     "geocoding-service", "metadata-storage", "vector-search",
@@ -10,7 +10,7 @@ $appServices = @(
     "media-import", "api-gateway", "webui"
 )
 
-Write-Host "`n[1/5] Stopping app containers (Gisgraphy bleibt laufen)..." -ForegroundColor Yellow
+Write-Host "`n[1/5] Stopping app containers (Nominatim bleibt laufen)..." -ForegroundColor Yellow
 docker compose stop @appServices
 docker compose rm -f @appServices
 

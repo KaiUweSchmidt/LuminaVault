@@ -18,10 +18,11 @@ builder.Services.AddSingleton<IMinioClient>(sp =>
         .Build();
 });
 
-builder.Services.AddHttpClient<GisgraphyClient>(client =>
+builder.Services.AddHttpClient<NominatimClient>(client =>
 {
-    var gisgraphyUrl = builder.Configuration["Services:Gisgraphy"] ?? "http://gisgraphy:8080";
-    client.BaseAddress = new Uri(gisgraphyUrl);
+    var nominatimUrl = builder.Configuration["Services:Nominatim"] ?? "http://nominatim:8080";
+    client.BaseAddress = new Uri(nominatimUrl);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("LuminaVault/1.0");
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 

@@ -16,7 +16,7 @@ LuminaVault ist eine Microservice-basierte Foto-/Medienverwaltung, gebaut mit **
 | `LuminaVault.ThumbnailGeneration` | Thumbnail-Erzeugung |
 | `LuminaVault.MetadataStorage` | Metadaten-Persistenz |
 | `LuminaVault.VectorSearch` | Vektorbasierte Suche |
-| `LuminaVault.GeocodingService` | Geocoding / Reverse-Geocoding |
+| `LuminaVault.GeocodingService` | Geocoding / Reverse-Geocoding (via Nominatim) |
 | `LuminaVault.ServiceDefaults` | Shared Defaults (Logging, Telemetry etc.) |
 
 ### Messaging
