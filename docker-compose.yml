@@ -50,17 +50,25 @@ services:
       retries: 10
 
   nominatim:
-    image: mediagis/nominatim:4.5
+    build:
+      context: .
+      dockerfile: nominatim/Dockerfile
     environment:
-      PBF_PATH: /osm-data/europe-latest.osm.pbf
-      REPLICATION_URL: https://download.geofabrik.de/europe-updates/
+      PBF_PATH: /osm-data/germany-latest.osm.pbf
+      REPLICATION_URL: https://download.geofabrik.de/europe/germany-updates/
       NOMINATIM_PASSWORD: nominatim
       IMPORT_STYLE: full
+      THREADS: 4
     volumes:
-      - nominatim-data:/var/lib/postgresql/14/main
+      - nominatim-data:/var/lib/postgresql/16/main
       - nominatim-flatnode:/nominatim/flatnode
+      - nominatim-progress:/nominatim/import-progress
       - C:\Dev\OpenStreetMapData:/osm-data:ro
-    shm_size: 1g
+    shm_size: 2g
+    deploy:
+      resources:
+        limits:
+          memory: 16g
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/status"]
       interval: 30s
@@ -243,4 +251,5 @@ volumes:
   ollama-data:
   nominatim-data:
   nominatim-flatnode:
+  nominatim-progress:
   webui-keys:

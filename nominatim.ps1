@@ -6,8 +6,8 @@
     Dieses Script steuert die Nominatim-Infrastruktur unabhaengig vom
     normalen App-Build (localbuild.ps1).
 
-    Nominatim importiert die europe-latest.osm.pbf automatisch beim
-    ersten Start (PBF_URL in docker-compose.yml). Der initiale Import
+    Nominatim importiert die germany-latest.osm.pbf automatisch beim
+    ersten Start (PBF_PATH in docker-compose.yml). Der initiale Import
     dauert je nach Hardware mehrere Stunden.
 
 .PARAMETER Action
@@ -33,7 +33,7 @@ param(
 
 function Start-Nominatim {
     Write-Host "`nNominatim-Container starten..." -ForegroundColor Cyan
-    Write-Host "Beim ersten Start wird europe-latest.osm.pbf heruntergeladen und importiert." -ForegroundColor Gray
+    Write-Host "Beim ersten Start wird germany-latest.osm.pbf aus C:\Dev\OpenStreetMapData importiert." -ForegroundColor Gray
     Write-Host "Das kann mehrere Stunden dauern. Fortschritt mit: .\nominatim.ps1 logs`n" -ForegroundColor Gray
     docker compose up -d nominatim
 
@@ -63,7 +63,7 @@ function Stop-Nominatim {
 function Reset-Nominatim {
     Write-Host "`n=== Nominatim zuruecksetzen ===" -ForegroundColor Red
     Write-Host "ACHTUNG: Loescht alle Nominatim-Daten!" -ForegroundColor Red
-    Write-Host "Die europe-latest.osm.pbf wird erneut heruntergeladen und importiert.`n" -ForegroundColor Yellow
+    Write-Host "Die germany-latest.osm.pbf aus C:\Dev\OpenStreetMapData wird erneut importiert.`n" -ForegroundColor Yellow
 
     $confirm = Read-Host "Fortfahren? (j/n)"
     if ($confirm -ne "j") {
@@ -78,6 +78,7 @@ function Reset-Nominatim {
     Write-Host "Nominatim-Volumes loeschen..." -ForegroundColor Cyan
     docker volume rm luminavault_nominatim-data 2>$null
     docker volume rm luminavault_nominatim-flatnode 2>$null
+    docker volume rm luminavault_nominatim-progress 2>$null
 
     Write-Host "Sauber neu starten..." -ForegroundColor Cyan
     Start-Nominatim
